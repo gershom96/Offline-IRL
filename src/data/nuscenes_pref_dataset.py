@@ -40,6 +40,7 @@ class PreferenceDataset(Dataset):
     def load_image(self, image_path):
         """Loads an image from the given path."""
         image_path = image_path.decode("utf-8")  # Decode byte string to regular string
+        # print(image_path)
         image = Image.open(os.path.join(self.nuscenes_dataset_path, image_path)).convert("RGB")  # Ensure 3 channels
 
         if self.transform:
@@ -97,6 +98,6 @@ class PreferenceDataset(Dataset):
         for key in data.keys():
             data[key] = torch.from_numpy(np.array(data[key], dtype=np.float32))  # Optimized conversion
 
-        print(data["images"].shape)
+        # print(data["images"].shape)
 
         return data
