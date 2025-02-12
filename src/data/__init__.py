@@ -1,3 +1,3 @@
-from .nuscenes_pref_dataset import PreferenceDataset
+from .nuscenes_pref_dataset import NuScenesPreferenceDataset
 
-__all__ = ["PreferenceDataset","data"]
+__all__ = ["NuscenesPreferenceDataset","data"]
