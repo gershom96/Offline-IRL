@@ -5,7 +5,7 @@ from PIL import Image
 import numpy as np
 import os
 
-class PreferenceDataset(Dataset):
+class NuScenesPreferenceDataset(Dataset):
     def __init__(self, h5_file_path, nuscenes_dataset_path, mode=4, time_window=1, transform = None):
         """
         Args:

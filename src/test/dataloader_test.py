@@ -7,7 +7,7 @@ import torch
 # Add parent directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from data import PreferenceDataset
+from data import NuScenesPreferenceDataset
 
 # Paths
 h5_file = "/media/gershom/Media/Datasets/NuScenes/H5/nuscenes_preference_data.h5"
@@ -15,7 +15,7 @@ nuscenes_dataset_path = "/media/gershom/Media/Datasets/NuScenes"
 
 # Initialize Dataset
 mode = 2  # Change this to test different camera modes
-dataset = PreferenceDataset(h5_file, nuscenes_dataset_path, mode=mode, time_window=1)
+dataset = NuScenesPreferenceDataset(h5_file, nuscenes_dataset_path, mode=mode, time_window=1)
 n = len(dataset)
 
 # Camera Labels for Reference
