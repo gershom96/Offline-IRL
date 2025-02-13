@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from transformers import Dinov2Model
 
-# May not use this approach. Can have a variant and train the Query based attn pooling
+# Positional Encoding Class
 class SinusoidalPositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=256):
         """
@@ -28,6 +28,7 @@ class SinusoidalPositionalEncoding(nn.Module):
         """
         return x + self.pe[:, :x.size(1), :].to(x.device)
 
+# Reward Model
 class RewardModelSCAND(nn.Module):
     def __init__(self, num_queries=4):  # Multi-query support
         super().__init__()
@@ -38,7 +39,11 @@ class RewardModelSCAND(nn.Module):
         # Load DINOv2
         self.vision_model = Dinov2Model.from_pretrained("facebook/dinov2-base")
         self.vision_dim = self.hidden_dim
-        
+
+        # Freeze DINOv2 weights
+        for param in self.vision_model.parameters():
+            param.requires_grad = False
+
         # Positional Encoding
         self.positional_encoding = SinusoidalPositionalEncoding(self.hidden_dim)
 
@@ -64,12 +69,12 @@ class RewardModelSCAND(nn.Module):
             nn.Linear(self.hidden_dim, self.hidden_dim) for _ in range(self.num_queries)
         ])
 
-        # Cross-Attention
+        # Cross-Attention and Fusion
         self.cross_attention = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=8, batch_first=True)
         self.cross_attn_norm = nn.LayerNorm(self.hidden_dim)  # Added normalization before cross-attention
         self.fusion_norm = nn.LayerNorm(self.hidden_dim)  # Normalize after fusion
 
-        # **MLP-based Query Fusion** (Replacing softmax-based fusion)
+        # **MLP-based Query Fusion**
         self.query_fusion_mlp = nn.Sequential(
             nn.Linear(self.num_queries * self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
@@ -99,12 +104,13 @@ class RewardModelSCAND(nn.Module):
         patch_embeddings = self.positional_encoding(patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
         patch_embeddings = self.patch_norm(patch_embeddings)  # Normalizing before patch embeddings
 
+        # Self-Attention on Vision Features
         attn_output, _ = self.attn_layer(patch_embeddings, patch_embeddings, patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
         attn_output = self.attn_norm(attn_output)  # Normalize After Self-Attentio
         # Add Positional Encoding Again Before Cross-Attention
         attn_output = self.positional_encoding(attn_output)  # Add Positional Encoding Again Before Cross-Attention
 
-        # Process Numerical Inputs
+        # Process State Inputs
         state_inputs = torch.cat([goal_distance, heading_error, velocity, omega, past_action, current_action], dim=-1)  # (batch_size, 8)
         state_embedding = self.state_mlp(state_inputs)  # Shape: (batch_size, hidden_dim)
         state_embedding = self.state_norm(state_embedding) # Norm to normalize before fusion
@@ -113,7 +119,7 @@ class RewardModelSCAND(nn.Module):
         query_list = [proj(state_embedding) for proj in self.state_query_proj]
         state_queries = torch.stack(query_list, dim=1)  # (batch_size, Q, hidden_dim)
 
-        # **Apply LayerNorm Before Cross-Attention**
+        # Apply LayerNorm Before Cross-Attention
         state_queries = self.cross_attn_norm(state_queries)
 
         # Cross-Attention
