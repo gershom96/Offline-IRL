@@ -75,22 +75,24 @@ class SCANDPreferenceDataset(Dataset):
             "velocity": [],
             "rotation_rate": [],
             "preference_ranking": [],
-            "image": []
+            "images": [], 
+            "last_action": []
         }
 
         for i in indices:
             # Load dynamic data
             data["goal_distance"].append(self.h5_file["goal_distance"][i])
             data["heading_error"].append(self.h5_file["heading_error"][i])
-            data["velocity"].append(self.h5_file["velocity"][i])
-            data["rotation_rate"].append(self.h5_file["rotation_rate"][i])
+            data["velocity"].append(self.h5_file["v"][i])
+            data["rotation_rate"].append(self.h5_file["omega"][i])
             data["preference_ranking"].append(self.h5_file["preference_ranking"][i])
+            data["last_action"].append(self.h5_file["last_action"][i])
 
             # Camera selection
-            image = self.h5_file["images"][i]
+            image = self.h5_file["image"][i]
 
             image = np.array(self.load_image(image))
-            data["images"].append(image)  # Stack images into a single tensor
+            data["images"].append(np.array([image]))  # Stack images into a single tensor
 
         # Convert lists to tensors for dynamic data
         for key in data.keys():
