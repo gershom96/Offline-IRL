@@ -28,7 +28,7 @@ class SinusoidalPositionalEncoding(nn.Module):
         """
         return x + self.pe[:, :x.size(1), :].to(x.device)
 
-class RewardModel(nn.Module):
+class RewardModelSCAND(nn.Module):
     def __init__(self):
         super().__init__()
 
