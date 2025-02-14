@@ -27,7 +27,7 @@ val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4
 # Define Model, Loss, Optimizer
 model = RewardModelSCAND().to(device)
 criterion = PL_Loss()
-optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+optimizer = optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
 num_epochs = 10
