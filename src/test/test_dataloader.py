@@ -7,15 +7,14 @@ import torch
 # Add parent directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from data import NuScenesPreferenceDataset
-from data import SCANDPreferenceDataset
+from data.nuscenes_pref_dataset import NuScenesPreferenceDataset
+from data.scand_pref_dataset import SCANDPreferenceDataset
 
 scand = True
 # Paths
 
 if(scand):
     h5_file = "/media/gershom/Media/Datasets/SCAND/scand_preference_data.h5"
-    scand_dataset_path = "/media/gershom/Media/Datasets/NuScenes"
 else:
     h5_file = "/media/gershom/Media/Datasets/NuScenes/H5/nuscenes_preference_data.h5"
     nuscenes_dataset_path = "/media/gershom/Media/Datasets/NuScenes"
@@ -31,7 +30,7 @@ else:
 
 
 if(scand):
-    dataset = SCANDPreferenceDataset(h5_file, scand_dataset_path, time_window=1)
+    dataset = SCANDPreferenceDataset(h5_file, time_window=1)
     n = len(dataset)
     camera_labels = [
             'CAM_FRONT']
@@ -74,13 +73,13 @@ for i in range(n):
 
     print(f"Sample : {i}/{n}")
     # print(sample["goal_distance"].shape)
-    print("Goal Distance:", sample["goal_distance"][0])
-    print("Heading Error:", sample["heading_error"][0])
-    print("Velocity:", sample["velocity"][0].numpy())
-    print("Rotation Rate:", sample["rotation_rate"][0].numpy())
+    print("Goal Distance:", sample["goal_distance"][0][0])
+    print("Heading Error:", sample["heading_error"][0][0])
+    print("Velocity:", sample["velocity"][0][0].numpy())
+    print("Rotation Rate:", sample["rotation_rate"][0][0].numpy())
     print("Preference Ranking Shape:", sample["preference_ranking"].shape)
     print("Preference Ranking Top3:", sample["preference_ranking"][0][0], sample["preference_ranking"][0][1], sample["preference_ranking"][0][2])
-    print("Last Action: ", sample["last_action"][0])
+    print("Last Action: ", sample["last_action"][0][0])
 
     # ---- Display the Images ----
     images = sample["images"][0]  # Shape: [#Cameras, 3, H, W]
