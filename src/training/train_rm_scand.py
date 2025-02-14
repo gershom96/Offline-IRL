@@ -23,6 +23,7 @@ N_EPOCHS = 10
 train_val_split = 0.8
 num_workers = 4
 batch_print_freq = 10
+gradient_log_freq = 100
 notes = "implementing wandb"
 use_wandb = True
 save_model = True
@@ -76,6 +77,9 @@ optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 global_step = 0
 start_time = time.time()
+if use_wandb:
+    if gradient_log_freq > 0:
+        wandb.watch(model, log_freq=gradient_log_freq)
 
 for epoch in range(N_EPOCHS):
     model.train()
@@ -110,7 +114,7 @@ for epoch in range(N_EPOCHS):
         global_step += 1
 
         if batch_count % batch_print_freq == 0:  # Log every 10 batches
-            SPS = int(global_step / (time.time() - start_time))
+            SPS = global_step / (time.time() - start_time)
             print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
             writer.add_scalar("charts/SPS", SPS, global_step)
             writer.add_scalar("epoch", epoch, global_step)
