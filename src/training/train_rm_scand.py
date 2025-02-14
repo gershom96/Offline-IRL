@@ -19,6 +19,8 @@ exp_name = "SCAND_test"
 h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
 BATCH_SIZE = 32 # 64 = 12GB VRAM, 32 = 6.9GB VRAM
 LEARNING_RATE = 3e-4
+NUM_QUERIES = 4
+HIDDEN_DIM = 768
 N_EPOCHS = 10
 train_val_split = 0.8
 num_workers = 4
@@ -43,6 +45,8 @@ run_config = {
     "learning_rate": LEARNING_RATE,
     "batch_size": BATCH_SIZE,
     "epochs": N_EPOCHS,
+    "num_queries": NUM_QUERIES,
+    "hidden_dim": HIDDEN_DIM,
     "train_val_split": train_val_split,
     "num_workers": num_workers,
     "save_model": save_model,
@@ -71,7 +75,7 @@ writer.add_text(
 )
 
 # Define Model, Loss, Optimizer
-model = RewardModelSCAND().to(device)
+model = RewardModelSCAND(num_queries=NUM_QUERIES, hidden_dim=HIDDEN_DIM).to(device)
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
