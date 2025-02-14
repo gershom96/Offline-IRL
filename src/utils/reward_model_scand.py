@@ -71,34 +71,44 @@ class RewardModelSCAND(nn.Module):
 
         # Cross-Attention and Fusion
         self.cross_attention = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=8, batch_first=True)
-        self.cross_attn_norm = nn.LayerNorm(self.hidden_dim)  # Added normalization before cross-attention
         self.fusion_norm = nn.LayerNorm(self.hidden_dim)  # Normalize after fusion
 
         # **MLP-based Query Fusion**
         self.query_fusion_mlp = nn.Sequential(
             nn.Linear(self.num_queries * self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
-            nn.Linear(self.hidden_dim, self.hidden_dim)  # Output fused representation
+            nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
+            nn.LayerNorm(self.hidden_dim)  # Normalize fused representation
         )
 
         # Reward Prediction Head
         self.reward_head = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(self.hidden_dim, 128),
             nn.ReLU(),
             nn.Linear(128, 1)  # Output: Reward Score
         )
 
-    def forward(self, image, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size):
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """Initializes weights using Xavier uniform distribution."""
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)  # Zero-bias initialization
+
+    def forward(self, image, goal_distance, heading_error, velocity, omega, last_action, preference_ranking, batch_size):
         """
         image: (batch_size, 3, 224, 224)
         goal_distance: (batch_size, 1)
         heading_error: (batch_size, 1)
-        velocity: (batch_size, 2)
-        past_action: (batch_size, 2)
-        current_action: (batch_size, 2)
+        velocity: (batch_size, 1)
+        omega: (batch_size, 1)
+        last_action: (batch_size, 2)
+        preference_ranking: (batch_size, 25, 2)  # 25 ranked action pairs
         """
-
+        
         # Extract vision features (Patch embeddings, excluding CLS)
         patch_embeddings = self.vision_model(image).last_hidden_state[:, 1:, :]  # Shape: (batch_size, num_patches, hidden_dim)
         patch_embeddings = self.positional_encoding(patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
@@ -106,33 +116,40 @@ class RewardModelSCAND(nn.Module):
 
         # Self-Attention on Vision Features
         attn_output, _ = self.attn_layer(patch_embeddings, patch_embeddings, patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
-        attn_output = self.attn_norm(attn_output)  # Normalize After Self-Attentio
+        attn_output = self.attn_norm(attn_output)  # Normalize After Self-Attention
         # Add Positional Encoding Again Before Cross-Attention
         attn_output = self.positional_encoding(attn_output)  # Add Positional Encoding Again Before Cross-Attention
 
         # Process State Inputs
-        state_inputs = torch.cat([goal_distance, heading_error, velocity, omega, past_action, current_action], dim=-1)  # (batch_size, 8)
-        state_embedding = self.state_mlp(state_inputs)  # Shape: (batch_size, hidden_dim)
+        state_inputs = torch.cat([goal_distance, heading_error, velocity, omega, last_action, preference_ranking], dim=-1)  # (batch_size, 25, 8)
+        state_embedding = self.state_mlp(state_inputs)  # Shape: (batch_size, 25, hidden_dim)
         state_embedding = self.state_norm(state_embedding) # Norm to normalize before fusion
 
         # Generate Multiple Queries
         query_list = [proj(state_embedding) for proj in self.state_query_proj]
-        state_queries = torch.stack(query_list, dim=1)  # (batch_size, Q, hidden_dim)
+        state_queries = torch.stack(query_list, dim=2)  # (batch_size, 25, Q, hidden_dim)
 
-        # Apply LayerNorm Before Cross-Attention
-        state_queries = self.cross_attn_norm(state_queries)
 
-        # Cross-Attention
-        fused_features, _ = self.cross_attention(state_queries, attn_output, attn_output) # Shape: (batch_size, query_size, hidden_dim)
+        # Reshape for Cross-Attention
+        state_queries = state_queries.view(batch_size * 25, self.num_queries, -1)  # (batch_size * 25, num_queries, hidden_dim)
+        attn_output = attn_output.repeat_interleave(25, dim=0)  # (batch_size * 25, num_patches, hidden_dim)
+
+        # Cross-Attention (Querying vision features with action-specific queries)
+        fused_features, _ = self.cross_attention(state_queries, attn_output, attn_output)  # (batch_size * 25, num_queries, hidden_dim)
+
+        # print("Average Attention Weights:", _.mean(dim=-1))
+        # Reshape fused features back to (batch_size, 25, num_queries, hidden_dim)
+        fused_features = fused_features.view(batch_size, 25, self.num_queries, -1)
 
         # print(fused_features.shape)
+        fused_features = fused_features.reshape(batch_size, 25, -1)  # (batch_size, 25, hidden_dim)
         # **MLP-based Query Fusion**
-        fused_features = fused_features.reshape(batch_size, -1) # Flatten (batch_size, Q * hidden_dim)
-        fused_features = self.query_fusion_mlp(fused_features)  # (batch_size, hidden_dim)
+        fused_features = fused_features.view(batch_size, 25, -1) # Shape: (batch_size, 25, num_queries * hidden_dim)
+        fused_features = self.query_fusion_mlp(fused_features)   # Shape: (batch_size, 25, hidden_dim)
 
         fused_features = self.fusion_norm(fused_features)  # Normalize After Feature Fusion
 
-        # Predict Reward
-        reward = self.reward_head(fused_features)  # (batch_size, 1)
+        # Predict rewards for all 25 actions
+        rewards = self.reward_head(fused_features).squeeze(-1)  # (batch_size, 25)
 
-        return reward
+        return rewards
