@@ -16,17 +16,17 @@ from utils.plackett_luce_loss import PL_Loss
 # user defined params;
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
-h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
-BATCH_SIZE = 32 # 64 = 12GB VRAM, 32 = 6.9GB VRAM
-LEARNING_RATE = 3e-4
-NUM_QUERIES = 4
+h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
+BATCH_SIZE = 64 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
+LEARNING_RATE = 0.0002
+NUM_QUERIES = 8
 HIDDEN_DIM = 768
-N_EPOCHS = 10
+N_EPOCHS = 50
 train_val_split = 0.8
-num_workers = 4
-batch_print_freq = 10
+num_workers = 8
+batch_print_freq = 5
 gradient_log_freq = 100
-notes = "implementing wandb"
+notes = "jim-desktop"
 use_wandb = True
 save_model = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,7 +39,7 @@ val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=num_workers, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=num_workers, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)
 
 run_config = {
     "learning_rate": LEARNING_RATE,
@@ -119,7 +119,7 @@ for epoch in range(N_EPOCHS):
 
         if batch_count % batch_print_freq == 0:  # Log every 10 batches
             SPS = global_step / (time.time() - start_time)
-            print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
+            # print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
             writer.add_scalar("charts/SPS", SPS, global_step)
             writer.add_scalar("epoch", epoch, global_step)
 
