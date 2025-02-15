@@ -18,7 +18,7 @@ from utils.plackett_luce_loss import PL_Loss
 def train(config=None):
     exp_name = "SCAND_tuning"
     h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
-    notes = "gammawks03"
+    notes = "CHANGE_ME"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = torch.device("cpu")
     # Get the current time
@@ -92,8 +92,8 @@ def train(config=None):
 
             if batch_count % wandb.config["batch_print_freq"] == 0:  # Log every 10 batches
                 SPS = global_step / (time.time() - start_time)
-                print(
-                    f"Epoch [{epoch + 1}/{wandb.config["epochs"]}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
+                # print(
+                    # f"Epoch [{epoch + 1}/{wandb.config["epochs"]}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
                 writer.add_scalar("charts/SPS", SPS, global_step)
                 writer.add_scalar("epoch", epoch, global_step)
 
@@ -140,4 +140,4 @@ with open('../configs/default_sweep.yaml', 'r') as f:
     sweep_config = yaml.full_load(f)
 
 sweep_id = wandb.sweep(sweep=sweep_config, project="scand_sweep")
-wandb.agent(sweep_id, train, count=1)
+wandb.agent(sweep_id, train, count=12)
