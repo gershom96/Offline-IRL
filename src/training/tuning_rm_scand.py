@@ -1,9 +1,3 @@
-import sys
-import time
-import datetime
-from torch.utils.tensorboard import SummaryWriter
-from functools import partial
-import os
 import torch
 import torch.optim as optim
 import sys
@@ -22,7 +16,7 @@ from utils.plackett_luce_loss import PL_Loss
 
 
 def train(config=None):
-    exp_name = "SCAND_sweeps"
+    exp_name = "SCAND_tuning"
     h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
     notes = "gammawks03"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
