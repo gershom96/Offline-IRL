@@ -17,6 +17,9 @@ from utils.plackett_luce_loss import PL_Loss
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
 h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
+checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
+# h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
+# checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
 BATCH_SIZE = 64 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
 LEARNING_RATE = 0.0002
 NUM_QUERIES = 8
@@ -153,10 +156,22 @@ for epoch in range(N_EPOCHS):
 
     scheduler.step(avg_val_loss)  # Adjust learning rate
 
-    if save_model:
-        model_path = f"runs/{run_name}/{exp_name}.torch_model"
-        torch.save(model.state_dict(), model_path)
-        print(f"model saved to {model_path}")
+
+    if (epoch + 1) % 20 == 0:
+        checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
+
+        # Save only trainable parameters (excluding frozen ones)
+        trainable_state_dict = {k: v for k, v in model.state_dict().items() if v.requires_grad}
+
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': trainable_state_dict,
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': avg_train_loss,
+            'val_loss': avg_val_loss
+        }, checkpoint_path)
+
+        print(f"Checkpoint saved: {checkpoint_path}")
 
 print("Training Complete!")
 writer.close()
