@@ -30,7 +30,7 @@ class SinusoidalPositionalEncoding(nn.Module):
 
 # Reward Model
 class RewardModelSCAND(nn.Module):
-    def __init__(self, num_queries=4, hidden_dim = 768):  # Multi-query support
+    def __init__(self, num_queries = 4, hidden_dim = 768):  # Multi-query support
         super().__init__()
 
         self.hidden_dim = hidden_dim  # 768 is DINOv2 feature size

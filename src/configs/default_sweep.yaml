@@ -1,0 +1,31 @@
+program: tuning_rm_scand.py
+method: bayes
+metric:
+  goal: minimize
+  name: avg_val_loss
+parameters:
+  batch_size:
+    values: [32, 64, 96]
+  num_queries:
+    values: [ 2, 4, 8 ]
+  hidden_dim:
+    values: [768]
+  learning_rate:
+    distribution: "log_uniform"
+    min: 0.0001
+    max: 0.01
+  epochs:
+    value: 5
+  train_val_split:
+    value: 0.8
+  num_workers:
+    value: 1
+  save_model:
+    value: False
+  batch_print_freq:
+    value: 10
+early_terminate:
+  type: hyperband
+  s: 2
+  eta: 3
+  max_iter: 27

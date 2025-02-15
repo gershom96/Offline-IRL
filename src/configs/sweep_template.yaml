@@ -1,0 +1,31 @@
+program: <insert>
+method: <insert>
+parameter:
+  hyperparameter_name0:
+    value: 0
+  hyperparameter_name1:
+    values: [0, 0, 0]
+  hyperparameter_name:
+    distribution: <insert>
+    value: <insert>
+  hyperparameter_name2:
+    distribution: <insert>
+    min: <insert>
+    max: <insert>
+    q: <insert>
+  hyperparameter_name3:
+    distribution: <insert>
+    values:
+      - <list_of_values>
+      - <list_of_values>
+      - <list_of_values>
+early_terminate:
+  type: hyperband
+  s: 0
+  eta: 0
+  max_iter: 0
+command:
+- ${Command macro}
+- ${Command macro}
+- ${Command macro}
+- ${Command macro}
