@@ -11,7 +11,7 @@ parameters:
   hidden_dim:
     values: [768]
   learning_rate:
-    distribution: "log_uniform"
+    distribution: "log_uniform_values"
     min: 0.0001
     max: 0.01
   epochs:
