@@ -31,11 +31,13 @@ class SinusoidalPositionalEncoding(nn.Module):
 
 # Reward Model
 class RewardModelSCAND(nn.Module):
-    def __init__(self, num_queries=4, hidden_dim = 768):  # Multi-query support
+    def __init__(self, num_queries=4, num_heads=8, dropout=0.0, num_attn_stacks=0):  # Multi-query support
         super().__init__()
 
-        self.hidden_dim = hidden_dim  # 768 is DINOv2 feature size
+        self.hidden_dim = 768  # 768 is DINOv2 feature size
         self.num_queries = num_queries  # Number of state queries
+        self.num_heads = num_heads  # Number of attn heads
+        self.num_attn_stacks = num_attn_stacks  # Number of stacks of attention
 
         # Load DINOv2
         self.vision_model = Dinov2Model.from_pretrained("facebook/dinov2-base")
@@ -52,7 +54,8 @@ class RewardModelSCAND(nn.Module):
         self.patch_norm = nn.LayerNorm(self.hidden_dim)  
 
         # Self-Attention Over Vision Features
-        self.attn_layer = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=8, batch_first=True)
+        self.attn_layer = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=self.num_heads,
+                                                dropout=dropout, batch_first=True)
         self.attn_norm = nn.LayerNorm(self.hidden_dim)
 
         # MLP for numerical inputs (goal distance, heading error, velocity, past and current action)
@@ -75,7 +78,7 @@ class RewardModelSCAND(nn.Module):
         # Cross-Attention and Fusion
         self.cross_attention = nn.MultiheadAttention(
             embed_dim=self.hidden_dim, 
-            num_heads=8, 
+            num_heads=self.num_heads,
             batch_first=True  # Ensures input is (batch_size, seq_len, hidden_dim)
         )
         self.fusion_norm = nn.LayerNorm(self.hidden_dim)  # Normalize after fusion
@@ -86,6 +89,12 @@ class RewardModelSCAND(nn.Module):
             nn.ReLU(),
             nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
             nn.LayerNorm(self.hidden_dim)  # Normalize fused representation
+        )
+
+        self.mlp_without_norm = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
         )
 
         # Reward Prediction Head
@@ -164,6 +173,13 @@ class RewardModelSCAND(nn.Module):
         fused_features = self.query_fusion_mlp(fused_features)   # Shape: (batch_size, 25, hidden_dim)
 
         fused_features = self.fusion_norm(fused_features)  # Normalize After Feature Fusion
+        for i_stack in range(self.num_attn_stacks):
+            fused_attn_output, _ = self.attn_layer(fused_features, fused_features,
+                                             fused_features)  # Shape: (batch_size, 25, hidden_dim)
+            add_and_norm = self.attn_norm(fused_features + fused_attn_output)  # Normalize After Self-Attention
+            fused_feed_forward = self.mlp_without_norm(add_and_norm)
+            add_and_norm = self.attn_norm(fused_feed_forward + add_and_norm)
+            fused_features = add_and_norm
 
         # Predict rewards for all 25 actions
         rewards = self.reward_head(fused_features).squeeze(-1)  # (batch_size, 25)

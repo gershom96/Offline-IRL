@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, random_split
 from data.scand_pref_dataset import SCANDPreferenceDataset
 from utils.reward_model_scand import RewardModelSCAND
 from utils.plackett_luce_loss import PL_Loss
+from torchinfo import summary
 
 # user defined params;
 project_name = "Offline-IRL"
@@ -23,15 +24,17 @@ checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoi
 BATCH_SIZE = 64 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
 LEARNING_RATE = 0.0002
 NUM_QUERIES = 8
-HIDDEN_DIM = 768
+NUM_HEADS = 8
 N_EPOCHS = 50
+ADDON_ATTN_STACKS = 2
 train_val_split = 0.8
 num_workers = 8
 batch_print_freq = 5
 gradient_log_freq = 100
-notes = "jim-desktop"
+notes = "jim-desktop attn stack addon"
 use_wandb = True
 save_model = True
+save_model_summary = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
@@ -49,7 +52,8 @@ run_config = {
     "batch_size": BATCH_SIZE,
     "epochs": N_EPOCHS,
     "num_queries": NUM_QUERIES,
-    "hidden_dim": HIDDEN_DIM,
+    "num_heads": NUM_HEADS,
+    "addon_attn_stacks" : ADDON_ATTN_STACKS,
     "train_val_split": train_val_split,
     "num_workers": num_workers,
     "save_model": save_model,
@@ -78,7 +82,13 @@ writer.add_text(
 )
 
 # Define Model, Loss, Optimizer
-model = RewardModelSCAND(num_queries=NUM_QUERIES, hidden_dim=HIDDEN_DIM).to(device)
+model = RewardModelSCAND(num_queries=NUM_QUERIES, num_heads=NUM_HEADS, num_attn_stacks=ADDON_ATTN_STACKS).to(device)
+if save_model_summary:
+    model_summary = summary(model)
+    f = open(f"runs/{run_name}/model_summary.txt", "w")
+    f.write(str(model_summary))
+    f.close()
+
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
@@ -128,6 +138,7 @@ for epoch in range(N_EPOCHS):
 
     avg_train_loss = train_loss / len(train_loader)
     writer.add_scalar("charts/avg_train_loss", avg_train_loss, global_step)
+    writer.add_scalar("epoch/avg_train_loss", avg_train_loss, epoch)
     writer.add_scalar("epoch", epoch, global_step)
 
     # Validation Loop (At End of Each Epoch)
@@ -149,6 +160,7 @@ for epoch in range(N_EPOCHS):
 
     avg_val_loss = val_loss / len(val_loader)
     writer.add_scalar("charts/avg_val_loss", avg_val_loss, global_step)
+    writer.add_scalar("epoch/avg_val_loss", avg_val_loss, epoch)
     writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]['lr'], global_step)
 
     # Print Epoch Results
