@@ -1,5 +1,8 @@
+from typing import Any
+
 import h5py
 import torch
+from torch import Tensor
 from torch.utils.data import Dataset
 from PIL import Image
 import numpy as np
@@ -9,8 +12,13 @@ import torchvision.transforms as transforms
 
 
 class SCANDPreferenceDataset(Dataset):
-    def __init__(self, h5_file_path, time_window=1, transform = None):
+    def __init__(self, h5_file_path:str, mode:int = 1, time_window:int = 1, transform = None):
         """
+        Dataloader for annotated scan-d dataset
+        annotated H5 file keys:
+            ['goal_distance', 'heading', 'heading_error', 'image', 'last_action', 'omega', 'pos',
+            'preference_ranking', 'sequence_info', 'user_responses', 'v']
+
         Args:
             h5_file_path (str): Path to the HDF5 dataset.
             mode (int): Determines which camera views to load.
@@ -102,7 +110,7 @@ class SCANDPreferenceDataset(Dataset):
         indices = self.get_time_series_indices(idx)
 
         # Data aggregation
-        data = {
+        data: dict[str | Any, list[Any] | Tensor] = {
             "goal_distance": [],
             "heading_error": [],
             "velocity": [],
@@ -153,7 +161,7 @@ class SCANDPreferenceDataset(Dataset):
 
         # Convert lists to tensors
         for key in data.keys():
-            if(self.time_window == 1):
+            if self.time_window == 1:
                 data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.float32))
             else:
                 data[key] = torch.from_numpy(np.array(data[key], dtype=np.float32))

@@ -1,0 +1,1 @@
+tensorboard --logdir="/home/jim/Documents/Projects/Offline-IRL/src/training/runs"

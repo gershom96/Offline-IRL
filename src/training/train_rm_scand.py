@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import sys
 import os
@@ -17,6 +16,7 @@ from utils.plackett_luce_loss import PL_Loss
 # user defined params;
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
+
 h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
 BATCH_SIZE = 32 # 64 = 12GB VRAM, 32 = 6.9GB VRAM
@@ -156,6 +156,7 @@ for epoch in range(N_EPOCHS):
     print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
     scheduler.step(avg_val_loss)  # Adjust learning rate
+
 
     if (epoch + 1) % 20 == 0:
         checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
