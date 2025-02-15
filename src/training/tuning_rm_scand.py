@@ -19,6 +19,7 @@ def train(config=None):
     exp_name = "SCAND_tuning"
     h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
     notes = "CHANGE_ME"
+    # notes = "gammawks03"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = torch.device("cpu")
     # Get the current time
@@ -87,6 +88,7 @@ def train(config=None):
 
             train_loss += loss.item()
             writer.add_scalar("charts/train_loss", loss.item(), global_step)
+            wandb.log({"train_loss": loss.item()})
             batch_count += 1
             global_step += 1
 
@@ -95,11 +97,15 @@ def train(config=None):
                 # print(
                     # f"Epoch [{epoch + 1}/{wandb.config["epochs"]}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
                 writer.add_scalar("charts/SPS", SPS, global_step)
+                wandb.log({"SPS": SPS})
                 writer.add_scalar("epoch", epoch, global_step)
+                wandb.log({"epoch": epoch})
 
         avg_train_loss = train_loss / len(train_loader)
         writer.add_scalar("charts/avg_train_loss", avg_train_loss, global_step)
+        wandb.log({"avg_train_loss": avg_train_loss})
         writer.add_scalar("epoch", epoch, global_step)
+        wandb.log({"epoch": epoch})
 
         # Validation Loop (At End of Each Epoch)
         model.eval()
@@ -121,10 +127,12 @@ def train(config=None):
 
         avg_val_loss = val_loss / len(val_loader)
         writer.add_scalar("charts/avg_val_loss", avg_val_loss, global_step)
+        wandb.log({"avg_val_loss": avg_val_loss})
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]['lr'], global_step)
+        wandb.log({"learning_rate": optimizer.param_groups[0]['lr']})
 
         # Print Epoch Results
-        print(f"Epoch [{epoch + 1}/{wandb.config['epochs']} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
+        # print(f"Epoch [{epoch + 1}/{wandb.config['epochs']} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
         scheduler.step(avg_val_loss)  # Adjust learning rate
 
