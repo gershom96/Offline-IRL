@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-# Define Plackett-Luce loss function
 class PL_Loss(nn.Module):
     def __init__(self):
         super(PL_Loss, self).__init__()
@@ -14,8 +13,11 @@ class PL_Loss(nn.Module):
         Returns:
             Scalar loss value.
         """
-        log_denominators = torch.logcumsumexp(rewards, dim=1)
-        loss = rewards - log_denominators
-        loss = -loss[:, :-1].sum(dim=1)
+        log_denominators = torch.logcumsumexp(rewards.flip(dims=[1]), dim=1).flip(dims=[1])
+
+        # print(f":rewards: {rewards} | denom: {log_denominators}")
+        # Compute PL loss
+        loss = rewards - log_denominators 
+        loss = -loss[:, :-1].sum(dim=1)  # Sum over sequence, ignore last term
 
         return loss.mean()  # Average over batch

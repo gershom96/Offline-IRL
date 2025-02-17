@@ -17,8 +17,8 @@ from torchinfo import summary
 # user defined params;
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
-# h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
-h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
+h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
+# h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
 checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 # checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
@@ -33,8 +33,9 @@ num_workers = 8
 batch_print_freq = 5
 gradient_log_freq = 100
 save_model_freq = 20
-# notes = "jim-desktop attn stack addon"
-notes = "gammawks03"
+activation_type = "relu" # "relu" or "gelu"
+notes = "jim-desktop attn stack addon"
+# notes = "gammawks03"
 use_wandb = False
 save_model = False
 save_model_summary = True
@@ -85,7 +86,8 @@ writer.add_text(
 )
 
 # Define Model, Loss, Optimizer
-model = RewardModelSCAND(num_queries=NUM_QUERIES, num_heads=NUM_HEADS, num_attn_stacks=ADDON_ATTN_STACKS).to(device)
+model = RewardModelSCAND(num_queries=NUM_QUERIES, num_heads=NUM_HEADS,
+                         num_attn_stacks=ADDON_ATTN_STACKS, activation=activation_type).to(device)
 if save_model_summary:
     model_summary = summary(model)
     f = open(f"runs/{run_name}/model_summary.txt", "w")
@@ -135,7 +137,7 @@ for epoch in range(N_EPOCHS):
 
         if batch_count % batch_print_freq == 0:  # Log every 10 batches
             SPS = global_step / (time.time() - start_time)
-            # print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
+            print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
             writer.add_scalar("charts/SPS", SPS, global_step)
             writer.add_scalar("epoch", epoch, global_step)
 
