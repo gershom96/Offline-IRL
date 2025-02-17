@@ -173,9 +173,9 @@ for epoch in range(N_EPOCHS):
 
     scheduler.step(avg_val_loss)  # Adjust learning rate
 
-
     if (epoch + 1) % save_model_freq == 0:
-        checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
+        # checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch + 1}.pth")
+        checkpoint_path = f"runs/{run_name}/{exp_name}_epoch{epoch + 1}.pth"
 
         # Save only trainable parameters (excluding frozen ones)
         trainable_state_dict = {k: v for k, v in model.state_dict().items() if v.requires_grad}
