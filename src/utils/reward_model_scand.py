@@ -29,6 +29,14 @@ class SinusoidalPositionalEncoding(nn.Module):
         """
         return x + self.pe[:, :x.size(1), :].to(x.device)
 
+class ScaledTanh(nn.Module):
+    def __init__(self, alpha=1.0):  # Default alpha=1 (normal tanh)
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, x):
+        return torch.tanh(self.alpha * x)
+    
 # Reward Model
 class RewardModelSCAND(nn.Module):
     def __init__(self, num_queries=4):  # Multi-query support
@@ -97,7 +105,7 @@ class RewardModelSCAND(nn.Module):
             nn.Linear(256, 128),
             nn.GELU(),
             nn.Linear(128, 1),
-            nn.Tanh()  # Normalize output range
+            # ScaledTanh(alpha=2.0)  # Normalize output range
         )
 
         self._initialize_weights()
@@ -144,10 +152,8 @@ class RewardModelSCAND(nn.Module):
 
         # Reshape to match MultiheadAttention expected shape (batch_size, seq_length, hidden_dim)
         state_queries = state_queries.view(batch_size * 25, self.num_queries, -1)  # (batch_size * 25, num_queries, hidden_dim)
-# Ensure attn_output is expanded properly
+        # Ensure attn_output is expanded properly
         attn_output = attn_output.unsqueeze(1).expand(-1, 25, -1, -1)  # Shape: (batch_size, 25, num_patches, hidden_dim)
-        # print(attn_output.shape)
-        # Reshape correctly before cross-attention
         attn_output = attn_output.reshape(batch_size * 25, attn_output.shape[2], attn_output.shape[3])  # Shape: (batch_size * 25, num_patches, hidden_dim)
         # print(attn_output.shape)
         # Cross-Attention (Querying vision features with action-specific queries)

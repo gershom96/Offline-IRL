@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from transformers import Dinov2Model
 
-# May not use this approach. Can have a variant and train the Query based attn pooling
+# Positional Encoding Class
 class SinusoidalPositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=256):
         """
@@ -28,49 +29,39 @@ class SinusoidalPositionalEncoding(nn.Module):
         """
         return x + self.pe[:, :x.size(1), :].to(x.device)
 
-class QueryBasedAttentionPooling(nn.Module):
-    def __init__(self, hidden_dim, max_patches=256):
+class ScaledTanh(nn.Module):
+    def __init__(self, alpha=1.0):  # Default alpha=1 (normal tanh)
         super().__init__()
-        self.query = nn.Parameter(torch.randn(1, 1, hidden_dim))  # Learnable query vector
-        self.attn = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=8, batch_first=True)
-        
-        # Sinusoidal Positional Encoding
-        self.positional_encoding = SinusoidalPositionalEncoding(hidden_dim, max_patches)
+        self.alpha = alpha
 
-    def forward(self, patch_embeddings):
-        """
-        patch_embeddings: (batch_size, num_patches, hidden_dim)
-        Returns: (batch_size, hidden_dim) - Dynamically pooled feature vector
-        """
-        # Add positional encoding to patches
-        patch_embeddings = self.positional_encoding(patch_embeddings)
+    def forward(self, x):
+        return torch.tanh(self.alpha * x)
+    
+# Reward Model
+class RewardModelSCAND2(nn.Module):
+    def __init__(self, num_queries=4):  # Multi-query support
+        super().__init__()
 
-        batch_size = patch_embeddings.shape[0]
-        q = self.query.expand(batch_size, -1, -1)  # Expand query to batch size
-        attn_output, _ = self.attn(q, patch_embeddings, patch_embeddings)  # Self-attention
-        return attn_output.squeeze(1)  # Remove query dimension
-
-class RewardModel(nn.Module):
-    def __init__(self, use_dinov2=True):
-        super(RewardModel, self).__init__()
-
-        self.use_dinov2 = use_dinov2
         self.hidden_dim = 768  # DINOv2 feature size
+        self.num_queries = num_queries  # Number of state queries
 
-        # Load DINOv2 (Pretrained)
-        if use_dinov2:
-            self.vision_model = Dinov2Model.from_pretrained("facebook/dinov2-base")
-            self.vision_dim = self.hidden_dim
-        else:
-            self.vision_model = None
-            self.vision_dim = 0  # No image features if not using vision
+        # Load DINOv2
+        self.vision_model = Dinov2Model.from_pretrained("facebook/dinov2-base")
+        self.vision_dim = self.hidden_dim
 
-        # Self-Attention Over Patch Embeddings
+        # Freeze DINOv2 weights
+        for param in self.vision_model.parameters():
+            param.requires_grad = False
+
+        # Positional Encoding
+        self.positional_encoding = SinusoidalPositionalEncoding(self.hidden_dim)
+
+        # LayerNorm for Patch Embeddings (Before and After Self-Attention)
+        self.patch_norm = nn.LayerNorm(self.hidden_dim)  
+
+        # Self-Attention Over Vision Features
         self.attn_layer = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=8, batch_first=True)
-
-        # Query-Based Attention Pooling (with Positional Encoding)
-        self.attention_pooling = QueryBasedAttentionPooling(self.hidden_dim)
-        self.norm = nn.LayerNorm(self.hidden_dim)
+        self.attn_norm = nn.LayerNorm(self.hidden_dim)
 
         # MLP for numerical inputs (goal distance, heading error, velocity, past and current action)
         self.state_mlp = nn.Sequential(
@@ -78,55 +69,104 @@ class RewardModel(nn.Module):
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
-            nn.Linear(256, self.hidden_dim)  # No ReLU here
+            nn.Linear(256, 512),
+            nn.ReLU(),
+            nn.Linear(512, self.hidden_dim)
         )
         self.state_norm = nn.LayerNorm(self.hidden_dim)
 
-        # Cross-Attention for Fusion
-        self.cross_attention = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=8, batch_first=True)
-        self.norm = nn.LayerNorm(self.hidden_dim)  # Normalize fused features
+        # Multi-Query Learnable Queries
+        self.state_query_proj = nn.ModuleList([
+            nn.Linear(self.hidden_dim, self.hidden_dim) for _ in range(self.num_queries)
+        ])
+
+        # Cross-Attention and Fusion
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=self.hidden_dim, 
+            num_heads=8, 
+            batch_first=True  # Ensures input is (batch_size, seq_len, hidden_dim)
+        )
+        self.fusion_norm = nn.LayerNorm(self.hidden_dim)  # Normalize after fusion
+
+        # **MLP-based Query Fusion**
+        self.query_fusion_mlp = nn.Sequential(
+            nn.Linear(self.num_queries * self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
+            nn.LayerNorm(self.hidden_dim)  # Normalize fused representation
+        )
 
         # Reward Prediction Head
         self.reward_head = nn.Sequential(
-            nn.ReLU(),
-            nn.Linear(self.hidden_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 1)  # Output: Reward Score
+            nn.Linear(self.hidden_dim, 512),
+            nn.GELU(),  # Replace ReLU with GELU
+            nn.Linear(512, 256),
+            nn.GELU(),
+            nn.Linear(256, 128),
+            nn.GELU(),
+            nn.Linear(128, 1),
+            # ScaledTanh(alpha=2.0)  # Normalize output range
         )
 
-    def forward(self, image, goal_distance, heading_error, velocity, past_action, current_action, batch_size):
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """Initializes weights using Xavier uniform distribution."""
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)  # Zero-bias initialization
+
+    def forward(self, image, goal_distance, heading_error, velocity, omega, last_action, preference_ranking, batch_size):
         """
         image: (batch_size, 3, 224, 224)
         goal_distance: (batch_size, 1)
         heading_error: (batch_size, 1)
-        velocity: (batch_size, 2)
-        past_action: (batch_size, 2)
-        current_action: (batch_size, 2)
+        velocity: (batch_size, 1)
+        omega: (batch_size, 1)
+        last_action: (batch_size, 2)
+        preference_ranking: (batch_size, 25, 2)  # 25 ranked action pairs
         """
-
+        
         # Extract vision features (Patch embeddings, excluding CLS)
-        if self.use_dinov2:
-            patch_embeddings = self.vision_model(image).last_hidden_state[:, 1:, :]  # Shape: (batch_size, num_patches, hidden_dim)
-        else:
-            patch_embeddings = torch.zeros((batch_size, 0, self.hidden_dim), device=goal_distance.device)
+        patch_embeddings = self.vision_model(image).last_hidden_state[:, 1:, :]  # Shape: (batch_size, num_patches, hidden_dim)
+        patch_embeddings = self.positional_encoding(patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
+        patch_embeddings = self.patch_norm(patch_embeddings)  # Normalizing before patch embeddings
 
-        # Apply Self-Attention on Patch Features
-        patch_embeddings = self.positional_encoding(patch_embeddings)
+        # Self-Attention on Vision Features
         attn_output, _ = self.attn_layer(patch_embeddings, patch_embeddings, patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
+        attn_output = self.attn_norm(attn_output)  # Normalize After Self-Attention
+        # Add Positional Encoding Again Before Cross-Attention
+        attn_output = self.positional_encoding(attn_output)  # Add Positional Encoding Again Before Cross-Attention
 
-        # Apply Query-Based Attention Pooling (which now includes Positional Encoding)
-        # vision_features = self.attention_pooling(attn_output)  # Shape: (batch_size, hidden_dim)
-        # vision_features = self.norm(vision_features)  # Normalize after attention
-
-        # Process numerical inputs
-        state_inputs = torch.cat([goal_distance, heading_error, velocity, past_action, current_action], dim=-1)  # (batch_size, 8)
-        state_embedding = self.state_mlp(state_inputs)  # Shape: (batch_size, 256)
+        # Process State Inputs
+        state_inputs = torch.cat([goal_distance, heading_error, velocity, omega, last_action, preference_ranking], dim=-1)  # (batch_size, 25, 8)
+        state_embedding = self.state_mlp(state_inputs)  # Shape: (batch_size, 25, hidden_dim)
         state_embedding = self.state_norm(state_embedding) # Norm to normalize before fusion
-        state_embedding = state_embedding.unsqueeze(1)
 
-        fused_features, _ = self.cross_attention(state_embedding, attn_output, attn_output) # Shape: (batch_size, 1, hidden_dim)
-        fused_features = fused_features.squeeze(1)
-        # Predict reward
-        reward = self.reward_head(fused_features)  # (batch_size, 1)
+        # Generate Multiple Queries
+        query_list = [proj(state_embedding) for proj in self.state_query_proj]
+        state_queries = torch.stack(query_list, dim=2)  # (batch_size, 25, Q, hidden_dim)
 
-        return reward
+        # Reshape to match MultiheadAttention expected shape (batch_size, seq_length, hidden_dim)
+        state_queries = state_queries.view(batch_size * 25, self.num_queries, -1)  # (batch_size * 25, num_queries, hidden_dim)
+        attn_output = attn_output.unsqueeze(1).expand(-1, 25, -1, -1)  # Shape: (batch_size, 25, num_patches, hidden_dim)
+        attn_output = attn_output.reshape(batch_size * 25, attn_output.shape[2], attn_output.shape[3])  # Shape: (batch_size * 25, num_patches, hidden_dim)
+
+        # Cross-Attention (Querying vision features with action-specific queries)
+        fused_features, _ = self.cross_attention(state_queries, attn_output, attn_output, key_padding_mask=None)  # (batch_size * 25, num_queries, hidden_dim)
+        fused_features = fused_features.view(batch_size, 25, self.num_queries, -1)
+
+        # print(fused_features.shape)
+        fused_features = fused_features.reshape(batch_size, 25, -1)  # (batch_size, 25, hidden_dim)
+        # **MLP-based Query Fusion**
+        fused_features = fused_features.view(batch_size, 25, -1) # Shape: (batch_size, 25, num_queries * hidden_dim)
+        fused_features = self.query_fusion_mlp(fused_features)   # Shape: (batch_size, 25, hidden_dim)
+
+        fused_features = self.fusion_norm(fused_features)  # Normalize After Feature Fusion
+
+        # Predict rewards for all 25 actions
+        rewards = self.reward_head(fused_features).squeeze(-1)  # (batch_size, 25)
+
+        return rewards

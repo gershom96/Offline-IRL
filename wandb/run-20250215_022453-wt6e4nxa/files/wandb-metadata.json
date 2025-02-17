@@ -1,0 +1,51 @@
+{
+  "os":  "Linux-4.18.0-553.34.1.el8_10.x86_64-x86_64-with-glibc2.28",
+  "python":  "CPython 3.10.16",
+  "startedAt":  "2025-02-15T07:24:54.139276Z",
+  "program":  "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/training/train_rm_scand.py",
+  "codePath":  "src/training/train_rm_scand.py",
+  "git":  {
+    "remote":  "https://github.com/gershom96/Offline-IRL.git",
+    "commit":  "e0c5110dae356751864bf1ae615de47e5a178361"
+  },
+  "email":  "gershom@umd.edu",
+  "root":  "/fs/nexus-scratch/gershom/IROS25/Offline-IRL",
+  "host":  "gammagpu13.umiacs.umd.edu",
+  "executable":  "/fs/nexus-scratch/gershom/anaconda3/envs/IROS25/bin/python3",
+  "codePathLocal":  "src/training/train_rm_scand.py",
+  "cpu_count":  16,
+  "cpu_count_logical":  16,
+  "gpu":  "NVIDIA RTX A6000",
+  "gpu_count":  2,
+  "disk":  {
+    "/":  {
+      "total":  "41922560000",
+      "used":  "13706821632"
+    }
+  },
+  "memory":  {
+    "total":  "134493749248"
+  },
+  "cpu":  {
+    "count":  16,
+    "countLogical":  16
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    }
+  ],
+  "slurm":  {
+    "job_id":  "3607003"
+  },
+  "cudaVersion":  "12.4"
+}
