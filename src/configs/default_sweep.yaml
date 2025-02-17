@@ -14,6 +14,10 @@ parameters:
     values: [ 0, 1, 2 ]
   activation_type:
     values: ["relu", "gelu"]
+  dropout:
+    distribution: "uniform"
+    min: 0.0
+    max: 0.5
   learning_rate:
     distribution: "log_uniform_values"
     min: 0.0001

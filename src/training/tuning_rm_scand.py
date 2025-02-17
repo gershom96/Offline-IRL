@@ -53,7 +53,8 @@ def train(config=None):
     )
     # Define Model, Loss, Optimizer
     model = RewardModelSCAND(num_queries=wandb.config["num_queries"], num_heads=wandb.config["num_heads"],
-                             num_attn_stacks=wandb.config["num_attn_stacks"], activation=wandb.config["activation_type"]).to(device)
+                             num_attn_stacks=wandb.config["num_attn_stacks"], activation=wandb.config["activation_type"],
+                             dropout=wandb.config["dropout"]).to(device)
 
     criterion = PL_Loss()
     optimizer = optim.AdamW(model.parameters(), lr=wandb.config["learning_rate"], weight_decay=1e-4)
