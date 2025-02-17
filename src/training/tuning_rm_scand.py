@@ -17,11 +17,11 @@ from utils.plackett_luce_loss import PL_Loss
 
 def train(config=None):
     exp_name = "SCAND_tuning"
-    h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
+    # h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
+    h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
     notes = "CHANGE_ME"
     # notes = "gammawks03"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # device = torch.device("cpu")
     # Get the current time
     now = datetime.datetime.now()
     # Format the time as a string
@@ -52,7 +52,9 @@ def train(config=None):
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in wandb.config.items()])),
     )
     # Define Model, Loss, Optimizer
-    model = RewardModelSCAND(num_queries=wandb.config["num_queries"], hidden_dim=wandb.config["hidden_dim"]).to(device)
+    model = RewardModelSCAND(num_queries=wandb.config["num_queries"], num_heads=wandb.config["num_heads"],
+                             num_attn_stacks=wandb.config["num_attn_stacks"], activation=wandb.config["activation_type"]).to(device)
+
     criterion = PL_Loss()
     optimizer = optim.AdamW(model.parameters(), lr=wandb.config["learning_rate"], weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
@@ -94,8 +96,9 @@ def train(config=None):
 
             if batch_count % wandb.config["batch_print_freq"] == 0:  # Log every 10 batches
                 SPS = global_step / (time.time() - start_time)
-                # print(
-                    # f"Epoch [{epoch + 1}/{wandb.config["epochs"]}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
+                print(
+                    f"Epoch [{epoch + 1}/{wandb.config['epochs']}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
+
                 writer.add_scalar("charts/SPS", SPS, global_step)
                 wandb.log({"SPS": SPS})
                 writer.add_scalar("epoch", epoch, global_step)
@@ -103,6 +106,7 @@ def train(config=None):
 
         avg_train_loss = train_loss / len(train_loader)
         writer.add_scalar("charts/avg_train_loss", avg_train_loss, global_step)
+        writer.add_scalar("epoch/avg_train_loss", avg_train_loss, epoch)
         wandb.log({"avg_train_loss": avg_train_loss})
         writer.add_scalar("epoch", epoch, global_step)
         wandb.log({"epoch": epoch})
@@ -127,18 +131,26 @@ def train(config=None):
 
         avg_val_loss = val_loss / len(val_loader)
         writer.add_scalar("charts/avg_val_loss", avg_val_loss, global_step)
+        writer.add_scalar("epoch/avg_val_loss", avg_val_loss, epoch)
         wandb.log({"avg_val_loss": avg_val_loss})
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]['lr'], global_step)
         wandb.log({"learning_rate": optimizer.param_groups[0]['lr']})
 
         # Print Epoch Results
-        # print(f"Epoch [{epoch + 1}/{wandb.config['epochs']} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
+        print(f"Epoch [{epoch + 1}/{wandb.config['epochs']} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
         scheduler.step(avg_val_loss)  # Adjust learning rate
 
         if wandb.config['save_model']:
             model_path = f"runs/{run_name}/{exp_name}.torch_model"
-            torch.save(model.state_dict(), model_path)
+            trainable_state_dict = {k: v for k, v in model.state_dict().items() if v.requires_grad}
+            torch.save({
+                'epoch': epoch + 1,
+                'model_state_dict': trainable_state_dict,
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss
+            }, model_path)
             print(f"model saved to {model_path}")
     print("Training Complete!")
     writer.close()
