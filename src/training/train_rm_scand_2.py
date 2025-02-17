@@ -24,7 +24,7 @@ h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
 BATCH_SIZE = 256 
 LEARNING_RATE = 5e-4
-NUM_QUERIES = 4
+NUM_QUERIES = 8
 HIDDEN_DIM = 768
 N_EPOCHS = 200
 train_val_split = 0.8
@@ -82,8 +82,8 @@ writer.add_text(
 )
 
 # Define Model, Loss, Optimizer
-model = RewardModelSCAND(num_queries=NUM_QUERIES).to(device)
-# model = RewardModelSCAND2(num_queries=NUM_QUERIES).to(device)
+# model = RewardModelSCAND(num_queries=NUM_QUERIES).to(device)
+model = RewardModelSCAND2(num_queries=NUM_QUERIES).to(device)
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 # scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
@@ -198,7 +198,7 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
 
 
     if (epoch + 1) % 10 == 0:
-        checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
+        checkpoint_path = os.path.join(checkpoint_dir, f"model_2_epoch_{epoch+1}.pth")
 
         # Save only trainable parameters (excluding frozen ones)
         trainable_state_dict = {k: v for k, v in model.state_dict().items() if "vision_model" not in k}

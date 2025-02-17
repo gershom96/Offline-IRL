@@ -65,18 +65,24 @@ class RewardModelSCAND2(nn.Module):
 
         # MLP for numerical inputs (goal distance, heading error, velocity, past and current action)
         self.state_mlp = nn.Sequential(
-            nn.Linear(8, 128),
-            nn.ReLU(),
+            nn.Linear(8, 32),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(32, 64),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(64, 128),
+            nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(128, 256),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(256, 512),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(512, self.hidden_dim)
         )
-        self.state_norm = nn.LayerNorm(self.hidden_dim)
+        self.state_queries_norm = nn.LayerNorm(self.hidden_dim)
 
         # Multi-Query Learnable Queries
         self.state_query_proj = nn.ModuleList([
@@ -95,7 +101,7 @@ class RewardModelSCAND2(nn.Module):
         # **MLP-based Query Fusion**
         self.query_fusion_mlp = nn.Sequential(
             nn.Linear(self.num_queries * self.hidden_dim, self.hidden_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
             nn.LayerNorm(self.hidden_dim)  # Normalize fused representation
@@ -140,18 +146,17 @@ class RewardModelSCAND2(nn.Module):
         # Extract vision features (Patch embeddings, excluding CLS)
         patch_embeddings = self.vision_model(image).last_hidden_state[:, 1:, :]  # Shape: (batch_size, num_patches, hidden_dim)
         patch_embeddings = self.positional_encoding(patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
-        patch_embeddings = self.patch_norm(patch_embeddings)  # Normalizing before patch embeddings
 
         # Self-Attention on Vision Features
         attn_output, _ = self.attn_layer(patch_embeddings, patch_embeddings, patch_embeddings)  # Shape: (batch_size, num_patches, hidden_dim)
         attn_output = self.attn_norm(attn_output)  # Normalize After Self-Attention
         # Add Positional Encoding Again Before Cross-Attention
-        attn_output = self.positional_encoding(attn_output)  # Add Positional Encoding Again Before Cross-Attention
+        # attn_output = self.positional_encoding(attn_output)  # Add Positional Encoding Again Before Cross-Attention
 
         # Process State Inputs
         state_inputs = torch.cat([goal_distance, heading_error, velocity, omega, last_action, preference_ranking], dim=-1)  # (batch_size, 25, 8)
         state_embedding = self.state_mlp(state_inputs)  # Shape: (batch_size, 25, hidden_dim)
-        state_embedding = self.state_norm(state_embedding) # Norm to normalize before fusion
+        # state_embedding = self.state_norm(state_embedding) # Norm to normalize before fusion
 
         # Generate Multiple Queries
         query_list = [proj(state_embedding) for proj in self.state_query_proj]
@@ -159,11 +164,13 @@ class RewardModelSCAND2(nn.Module):
 
         # Reshape to match MultiheadAttention expected shape (batch_size, seq_length, hidden_dim)
         state_queries = state_queries.view(batch_size * 25, self.num_queries, -1)  # (batch_size * 25, num_queries, hidden_dim)
+        state_queries = self.state_queries_norm(state_queries)
         attn_output = attn_output.unsqueeze(1).expand(-1, 25, -1, -1)  # Shape: (batch_size, 25, num_patches, hidden_dim)
         attn_output = attn_output.reshape(batch_size * 25, attn_output.shape[2], attn_output.shape[3])  # Shape: (batch_size * 25, num_patches, hidden_dim)
 
         # Cross-Attention (Querying vision features with action-specific queries)
         fused_features, _ = self.cross_attention(state_queries, attn_output, attn_output, key_padding_mask=None)  # (batch_size * 25, num_queries, hidden_dim)
+        fused_features = fused_features + state_queries
         fused_features = fused_features.view(batch_size, 25, self.num_queries, -1)
 
         # print(fused_features.shape)
