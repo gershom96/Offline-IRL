@@ -12,23 +12,33 @@ from torch.utils.data import DataLoader, random_split
 from data.scand_pref_dataset import SCANDPreferenceDataset
 from utils.reward_model_scand import RewardModelSCAND
 from utils.plackett_luce_loss import PL_Loss
+from torchinfo import summary
 
 # user defined params;
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
-h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
-BATCH_SIZE = 32 # 64 = 12GB VRAM, 32 = 6.9GB VRAM
-LEARNING_RATE = 3e-4
-NUM_QUERIES = 4
-HIDDEN_DIM = 768
-N_EPOCHS = 10
+h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
+# h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
+checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
+# h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
+# checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
+BATCH_SIZE = 64 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
+LEARNING_RATE = 0.0002
+NUM_QUERIES = 8
+NUM_HEADS = 8
+N_EPOCHS = 50
+ADDON_ATTN_STACKS = 2
 train_val_split = 0.8
-num_workers = 4
-batch_print_freq = 10
+num_workers = 8
+batch_print_freq = 5
 gradient_log_freq = 100
-notes = "gammawks03"
-use_wandb = True
-save_model = True
+save_model_freq = 20
+activation_type = "relu" # "relu" or "gelu"
+notes = "jim-desktop attn stack addon"
+# notes = "gammawks03"
+use_wandb = False
+save_model = False
+save_model_summary = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
@@ -39,14 +49,15 @@ val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=num_workers, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=num_workers, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)
 
 run_config = {
     "learning_rate": LEARNING_RATE,
     "batch_size": BATCH_SIZE,
     "epochs": N_EPOCHS,
     "num_queries": NUM_QUERIES,
-    "hidden_dim": HIDDEN_DIM,
+    "num_heads": NUM_HEADS,
+    "addon_attn_stacks" : ADDON_ATTN_STACKS,
     "train_val_split": train_val_split,
     "num_workers": num_workers,
     "save_model": save_model,
@@ -75,7 +86,14 @@ writer.add_text(
 )
 
 # Define Model, Loss, Optimizer
-model = RewardModelSCAND(num_queries=NUM_QUERIES, hidden_dim=HIDDEN_DIM).to(device)
+model = RewardModelSCAND(num_queries=NUM_QUERIES, num_heads=NUM_HEADS,
+                         num_attn_stacks=ADDON_ATTN_STACKS, activation=activation_type).to(device)
+if save_model_summary:
+    model_summary = summary(model)
+    f = open(f"runs/{run_name}/model_summary.txt", "w")
+    f.write(str(model_summary))
+    f.close()
+
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
@@ -125,6 +143,7 @@ for epoch in range(N_EPOCHS):
 
     avg_train_loss = train_loss / len(train_loader)
     writer.add_scalar("charts/avg_train_loss", avg_train_loss, global_step)
+    writer.add_scalar("epoch/avg_train_loss", avg_train_loss, epoch)
     writer.add_scalar("epoch", epoch, global_step)
 
     # Validation Loop (At End of Each Epoch)
@@ -146,6 +165,7 @@ for epoch in range(N_EPOCHS):
 
     avg_val_loss = val_loss / len(val_loader)
     writer.add_scalar("charts/avg_val_loss", avg_val_loss, global_step)
+    writer.add_scalar("epoch/avg_val_loss", avg_val_loss, epoch)
     writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]['lr'], global_step)
 
     # Print Epoch Results
@@ -153,10 +173,22 @@ for epoch in range(N_EPOCHS):
 
     scheduler.step(avg_val_loss)  # Adjust learning rate
 
-    if save_model:
-        model_path = f"runs/{run_name}/{exp_name}.torch_model"
-        torch.save(model.state_dict(), model_path)
-        print(f"model saved to {model_path}")
+    if (epoch + 1) % save_model_freq == 0:
+        # checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch + 1}.pth")
+        checkpoint_path = f"runs/{run_name}/{exp_name}_epoch{epoch + 1}.pth"
+
+        # Save only trainable parameters (excluding frozen ones)
+        trainable_state_dict = {k: v for k, v in model.state_dict().items() if v.requires_grad}
+
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': trainable_state_dict,
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': avg_train_loss,
+            'val_loss': avg_val_loss
+        }, checkpoint_path)
+
+        print(f"Checkpoint saved: {checkpoint_path}")
 
 print("Training Complete!")
 writer.close()
