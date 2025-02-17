@@ -17,7 +17,8 @@ from torchinfo import summary
 # user defined params;
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
-h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
+# h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
+h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
 checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 # checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
@@ -31,9 +32,11 @@ train_val_split = 0.8
 num_workers = 8
 batch_print_freq = 5
 gradient_log_freq = 100
-notes = "jim-desktop attn stack addon"
-use_wandb = True
-save_model = True
+save_model_freq = 20
+# notes = "jim-desktop attn stack addon"
+notes = "gammawks03"
+use_wandb = False
+save_model = False
 save_model_summary = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -169,7 +172,7 @@ for epoch in range(N_EPOCHS):
     scheduler.step(avg_val_loss)  # Adjust learning rate
 
 
-    if (epoch + 1) % 20 == 0:
+    if (epoch + 1) % save_model_freq == 0:
         checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
 
         # Save only trainable parameters (excluding frozen ones)

@@ -91,11 +91,19 @@ class RewardModelSCAND(nn.Module):
             nn.LayerNorm(self.hidden_dim)  # Normalize fused representation
         )
 
-        self.mlp_without_norm = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.ReLU(),
-            nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
+        self.addon_attn_1 = nn.MultiheadAttention(
+            embed_dim=self.hidden_dim,
+            num_heads=self.num_heads,
+            batch_first=True  # Ensures input is (batch_size, seq_len, hidden_dim)
+            )
+        self.addon_mlp_1 = nn.Linear(self.hidden_dim, self.hidden_dim)
+
+        self.addon_attn_2 = nn.MultiheadAttention(
+            embed_dim=self.hidden_dim,
+            num_heads=self.num_heads,
+            batch_first=True  # Ensures input is (batch_size, seq_len, hidden_dim)
         )
+        self.addon_mlp_2 = nn.Linear(self.hidden_dim, self.hidden_dim)
 
         # Reward Prediction Head
         self.reward_head = nn.Sequential(
@@ -173,13 +181,18 @@ class RewardModelSCAND(nn.Module):
         fused_features = self.query_fusion_mlp(fused_features)   # Shape: (batch_size, 25, hidden_dim)
 
         fused_features = self.fusion_norm(fused_features)  # Normalize After Feature Fusion
-        for i_stack in range(self.num_attn_stacks):
-            fused_attn_output, _ = self.attn_layer(fused_features, fused_features,
-                                             fused_features)  # Shape: (batch_size, 25, hidden_dim)
-            add_and_norm = self.attn_norm(fused_features + fused_attn_output)  # Normalize After Self-Attention
-            fused_feed_forward = self.mlp_without_norm(add_and_norm)
-            add_and_norm = self.attn_norm(fused_feed_forward + add_and_norm)
-            fused_features = add_and_norm
+        if self.num_attn_stacks > 0:
+            fused_attn_output1, _ = self.addon_attn_1(fused_features, fused_features, fused_features)
+            fused_attn_output1 += fused_features
+            mlp_features1 = self.attn_norm(fused_attn_output1)
+            mlp_features1 = self.addon_mlp_1(mlp_features1)
+            fused_features = self.attn_norm(mlp_features1 + fused_attn_output1)
+        if self.num_attn_stacks > 1:
+            fused_attn_output2, _ = self.addon_attn_2(fused_features, fused_features, fused_features)
+            fused_attn_output2 += fused_features
+            mlp_features2 = self.attn_norm(fused_attn_output2)
+            mlp_features2 = self.addon_mlp_1(mlp_features2)
+            fused_features = self.attn_norm(mlp_features2 + fused_attn_output2)
 
         # Predict rewards for all 25 actions
         rewards = self.reward_head(fused_features).squeeze(-1)  # (batch_size, 25)
