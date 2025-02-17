@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import sys
 import os
@@ -20,6 +19,7 @@ from utils.plackett_luce_loss import PL_Loss
 # user defined params;
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
+
 h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
 BATCH_SIZE = 256 
@@ -194,8 +194,9 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
 
     scheduler.step(avg_val_loss)  # Adjust learning rate
 
+
     if (epoch + 1) % 10 == 0:
-        checkpoint_path = os.path.join(checkpoint_dir, f"model_test_epoch_{epoch+1}.pth")
+        checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
 
         # Save only trainable parameters (excluding frozen ones)
         trainable_state_dict = {k: v for k, v in model.state_dict().items() if "vision_model" not in k}
