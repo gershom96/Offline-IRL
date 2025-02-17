@@ -60,17 +60,20 @@ class RewardModelSCAND2(nn.Module):
         self.patch_norm = nn.LayerNorm(self.hidden_dim)  
 
         # Self-Attention Over Vision Features
-        self.attn_layer = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=8, batch_first=True)
+        self.attn_layer = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=8, batch_first=True, dropout=0.1)
         self.attn_norm = nn.LayerNorm(self.hidden_dim)
 
         # MLP for numerical inputs (goal distance, heading error, velocity, past and current action)
         self.state_mlp = nn.Sequential(
             nn.Linear(8, 128),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(128, 256),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(256, 512),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(512, self.hidden_dim)
         )
         self.state_norm = nn.LayerNorm(self.hidden_dim)
@@ -84,7 +87,8 @@ class RewardModelSCAND2(nn.Module):
         self.cross_attention = nn.MultiheadAttention(
             embed_dim=self.hidden_dim, 
             num_heads=8, 
-            batch_first=True  # Ensures input is (batch_size, seq_len, hidden_dim)
+            batch_first=True,  # Ensures input is (batch_size, seq_len, hidden_dim)
+            dropout=0.1
         )
         self.fusion_norm = nn.LayerNorm(self.hidden_dim)  # Normalize after fusion
 
@@ -92,6 +96,7 @@ class RewardModelSCAND2(nn.Module):
         self.query_fusion_mlp = nn.Sequential(
             nn.Linear(self.num_queries * self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
             nn.LayerNorm(self.hidden_dim)  # Normalize fused representation
         )
@@ -100,10 +105,13 @@ class RewardModelSCAND2(nn.Module):
         self.reward_head = nn.Sequential(
             nn.Linear(self.hidden_dim, 512),
             nn.GELU(),  # Replace ReLU with GELU
+            nn.Dropout(0.1),
             nn.Linear(512, 256),
             nn.GELU(),
+            nn.Dropout(0.1),
             nn.Linear(256, 128),
             nn.GELU(),
+            nn.Dropout(0.1),
             nn.Linear(128, 1),
             # ScaledTanh(alpha=2.0)  # Normalize output range
         )

@@ -23,7 +23,7 @@ exp_name = "SCAND_test"
 h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
 BATCH_SIZE = 256 
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 1e-3
 NUM_QUERIES = 4
 HIDDEN_DIM = 768
 N_EPOCHS = 200
@@ -86,6 +86,8 @@ model = RewardModelSCAND(num_queries=NUM_QUERIES).to(device)
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
+# scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
+
 
 # Load from latest checkpoint (if available)
 latest_checkpoint = None
