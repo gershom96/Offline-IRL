@@ -22,18 +22,20 @@ h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
 checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 # checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
-BATCH_SIZE = 64 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
-LEARNING_RATE = 0.0002
-NUM_QUERIES = 8
+BATCH_SIZE = 96 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
+LEARNING_RATE = 0.000145
+NUM_QUERIES = 12
 NUM_HEADS = 8
 N_EPOCHS = 50
 ADDON_ATTN_STACKS = 2
+ACTIVATION_TYPE = "relu"
+DROPOUT_RATE = 0.0
 train_val_split = 0.8
-num_workers = 8
+num_workers = 4
 batch_print_freq = 5
 gradient_log_freq = 100
 save_model_freq = 20
-# notes = "jim-desktop attn stack addon"
+# notes = "jim-desktop new loss fn"
 notes = "gammawks03"
 use_wandb = False
 save_model = False
@@ -57,6 +59,8 @@ run_config = {
     "num_queries": NUM_QUERIES,
     "num_heads": NUM_HEADS,
     "addon_attn_stacks" : ADDON_ATTN_STACKS,
+    "activation_type" : ACTIVATION_TYPE,
+    "dropout_rate" : DROPOUT_RATE,
     "train_val_split": train_val_split,
     "num_workers": num_workers,
     "save_model": save_model,
@@ -86,7 +90,8 @@ writer.add_text(
 
 # Define Model, Loss, Optimizer
 model = RewardModelSCAND(num_queries=NUM_QUERIES, num_heads=NUM_HEADS,
-                         num_attn_stacks=ADDON_ATTN_STACKS, activation=activation_type).to(device)
+                         num_attn_stacks=ADDON_ATTN_STACKS, activation=ACTIVATION_TYPE,
+                         dropout=DROPOUT_RATE).to(device)
 if save_model_summary:
     model_summary = summary(model)
     f = open(f"runs/{run_name}/model_summary.txt", "w")
