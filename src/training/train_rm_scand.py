@@ -4,6 +4,7 @@ import sys
 import os
 import time
 import datetime
+import yaml
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -30,13 +31,14 @@ N_EPOCHS = 50
 ADDON_ATTN_STACKS = 2
 train_val_split = 0.8
 num_workers = 8
-batch_print_freq = 5
+batch_print_freq = 10
 gradient_log_freq = 100
-save_model_freq = 20
+activation_type = "relu"
+save_model_freq = 5
 # notes = "jim-desktop attn stack addon"
 notes = "gammawks03"
-use_wandb = False
-save_model = False
+use_wandb = True
+save_model = True
 save_model_summary = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -57,6 +59,7 @@ run_config = {
     "num_queries": NUM_QUERIES,
     "num_heads": NUM_HEADS,
     "addon_attn_stacks" : ADDON_ATTN_STACKS,
+    "activation_type" : activation_type,
     "train_val_split": train_val_split,
     "num_workers": num_workers,
     "save_model": save_model,
@@ -92,6 +95,9 @@ if save_model_summary:
     f = open(f"runs/{run_name}/model_summary.txt", "w")
     f.write(str(model_summary))
     f.close()
+# save config!
+with open(f'runs/{run_name}/config.yaml', 'w') as file:
+    yaml.dump(run_config, file)
 
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
@@ -178,11 +184,11 @@ for epoch in range(N_EPOCHS):
         checkpoint_path = f"runs/{run_name}/{exp_name}_epoch{epoch + 1}.pth"
 
         # Save only trainable parameters (excluding frozen ones)
-        trainable_state_dict = {k: v for k, v in model.state_dict().items() if v.requires_grad}
+        # trainable_state_dict = {k: v for k, v in model.state_dict().items() if v.requires_grad}
 
         torch.save({
             'epoch': epoch + 1,
-            'model_state_dict': trainable_state_dict,
+            'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'train_loss': avg_train_loss,
             'val_loss': avg_val_loss
