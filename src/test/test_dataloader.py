@@ -9,6 +9,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from data.nuscenes_pref_dataset import NuScenesPreferenceDataset
 from data.scand_pref_dataset import SCANDPreferenceDataset
+from data.scand_pref_dataset_2 import SCANDPreferenceDataset2
+
 
 scand = True
 # Paths
@@ -30,7 +32,7 @@ else:
 
 
 if(scand):
-    dataset = SCANDPreferenceDataset(h5_file, time_window=1)
+    dataset = SCANDPreferenceDataset2(h5_file, time_window=1)
     n = len(dataset)
     camera_labels = [
             'CAM_FRONT']
@@ -78,6 +80,7 @@ for i in range(n):
     print("Velocity:", sample["velocity"][0][0].numpy())
     print("Rotation Rate:", sample["rotation_rate"][0][0].numpy())
     print("Preference Ranking Shape:", sample["preference_ranking"].shape)
+    print("Preference Indices Shape:", sample["pref_idx"].shape)
     print("Preference Ranking Top3:", sample["preference_ranking"][0][0], sample["preference_ranking"][0][1], sample["preference_ranking"][0][2])
     print("Last Action: ", sample["last_action"][0][0])
 

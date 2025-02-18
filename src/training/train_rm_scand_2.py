@@ -15,6 +15,7 @@ from utils.reward_model_scand import RewardModelSCAND
 from utils.reward_model_scand_2 import RewardModelSCAND2
 
 from utils.plackett_luce_loss import PL_Loss
+from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
 
 # user defined params;
 project_name = "Offline-IRL"
@@ -86,42 +87,42 @@ writer.add_text(
 model = RewardModelSCAND2(num_queries=NUM_QUERIES).to(device)
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-# scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
+# scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
 # Load from latest checkpoint (if available)
 latest_checkpoint = None
-# if os.path.exists(checkpoint_dir):
-#     checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pth")]
-#     if checkpoint_files:
-#         latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))  # Find latest checkpoint
-#         latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_epoch_40.pth"
-#         checkpoint = torch.load(latest_checkpoint_path, map_location=device)
+if os.path.exists(checkpoint_dir):
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pth")]
+    if checkpoint_files:
+        latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))  # Find latest checkpoint
+        latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_2_epoch_60.pth"
+        checkpoint = torch.load(latest_checkpoint_path, map_location=device)
 
-#         # Print all saved layers
-#         print("\n🔍 Layers in the Checkpoint:")
-#         for key in checkpoint['model_state_dict'].keys():
-#             print(key)
+        # Print all saved layers
+        print("\n🔍 Layers in the Checkpoint:")
+        for key in checkpoint['model_state_dict'].keys():
+            print(key)
 
-#         print(f"\n✅ Total Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
+        print(f"\n✅ Total Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
 
-#         missing_layers = [key for key in model.state_dict().keys() if key not in checkpoint['model_state_dict']]
-#         print(f"\n Missing Layers (Expected in Model, but NOT in Checkpoint): {len(missing_layers)}")
-#         missing, unexpected = model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        total_layers = len(model.state_dict().keys())
+        missing_layers = [key for key in model.state_dict().keys() if key not in checkpoint['model_state_dict']]
+        print(f"\n Missing Layers (Expected in Model, but NOT in Checkpoint): {len(missing_layers)}")
+        missing, unexpected = model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 
-#         print(len(missing))
-#         # print("Missing Layers (not in checkpoint):", missing)
-#         # print("Unexpected Layers (in checkpoint but not in model):", unexpected)
-#         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-#         start_epoch = checkpoint['epoch']
-#         print(f"Loaded checkpoint from {latest_checkpoint_path} at epoch {start_epoch}")
-#     else:
-#         start_epoch = 0
-#         print("No previous checkpoint found. Starting fresh.")
-# else:
-#     start_epoch = 0
-#     print("Checkpoint directory does not exist. Starting fresh.")
-start_epoch = 0
+        print("Missing Layers (not in checkpoint):", len(missing_layers), total_layers)
+        # print(checkpoint['optimizer_state_dict'].keys())
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch']
+        print(f"Loaded checkpoint from {latest_checkpoint_path} at epoch {start_epoch}")
+    else:
+        start_epoch = 0
+        print("No previous checkpoint found. Starting fresh.")
+else:
+    start_epoch = 0
+    print("Checkpoint directory does not exist. Starting fresh.")
+# start_epoch = 0
 global_step = 0
 start_time = time.time()
 

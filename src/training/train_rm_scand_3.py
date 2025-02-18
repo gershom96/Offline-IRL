@@ -10,11 +10,11 @@ from torch.utils.tensorboard import SummaryWriter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from torch.utils.data import DataLoader, random_split
-from data.scand_pref_dataset import SCANDPreferenceDataset
-from utils.reward_model_scand import RewardModelSCAND
-from utils.reward_model_scand_2 import RewardModelSCAND2
+from data.scand_pref_dataset_2 import SCANDPreferenceDataset2
 
-from utils.plackett_luce_loss import PL_Loss
+from utils.reward_model_scand_3 import RewardModelSCAND3
+from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
+
 
 # user defined params;
 project_name = "Offline-IRL"
@@ -22,11 +22,13 @@ exp_name = "SCAND_test"
 
 h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
-BATCH_SIZE = 256 
+load_files = False
+BATCH_SIZE = 128 
 LEARNING_RATE = 5e-4
-NUM_QUERIES = 4
+NUM_QUERIES = 8
 HIDDEN_DIM = 768
 N_EPOCHS = 200
+num_actions = 25
 train_val_split = 0.8
 num_workers = 4
 batch_print_freq = 5
@@ -38,7 +40,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Load Dataset and Split
-dataset = SCANDPreferenceDataset(h5_file)
+dataset = SCANDPreferenceDataset2(h5_file)
 train_size = int(train_val_split * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -82,48 +84,51 @@ writer.add_text(
 )
 
 # Define Model, Loss, Optimizer
-model = RewardModelSCAND(num_queries=NUM_QUERIES).to(device)
-# model = RewardModelSCAND2(num_queries=NUM_QUERIES).to(device)
-criterion = PL_Loss()
+# model = RewardModelSCAND(num_queries=NUM_QUERIES).to(device)
+model = RewardModelSCAND3(num_queries=NUM_QUERIES).to(device)
+criterion = PL_Loss_v2()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-# scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
+# scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
 # Load from latest checkpoint (if available)
 latest_checkpoint = None
-if os.path.exists(checkpoint_dir):
-    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pth")]
-    if checkpoint_files:
-        latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))  # Find latest checkpoint
-        latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_epoch_30.pth"
-        checkpoint = torch.load(latest_checkpoint_path, map_location=device)
+if (load_files):
+    if os.path.exists(checkpoint_dir):
+        checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pth")]
+        if checkpoint_files:
+            latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))  # Find latest checkpoint
+            latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_2_epoch_120.pth"
+            checkpoint = torch.load(latest_checkpoint_path, map_location=device)
 
-        # Print all saved layers
-        print("\n🔍 Layers in the Checkpoint:")
-        for key in checkpoint['model_state_dict'].keys():
-            print(key)
+            # Print all saved layers
+            print("\n🔍 Layers in the Checkpoint:")
+            for key in checkpoint['model_state_dict'].keys():
+                print(key)
 
-        print(f"\n✅ Total Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
+            print(f"\nTotal Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
 
-        total_layers = len(model.state_dict().keys())
-        missing_layers = [key for key in model.state_dict().keys() if key not in checkpoint['model_state_dict']]
-        print(f"\n Missing Layers (Expected in Model, but NOT in Checkpoint): {len(missing_layers)}")
-        missing, unexpected = model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            total_layers = len(model.state_dict().keys())
+            missing_layers = [key for key in model.state_dict().keys() if key not in checkpoint['model_state_dict']]
+            print(f"\n Missing Layers (Expected in Model, but NOT in Checkpoint): {len(missing_layers)}")
+            missing, unexpected = model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 
-        print("Missing Layers (not in checkpoint):", len(missing_layers), total_layers)
-        # print(checkpoint['optimizer_state_dict'].keys())
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch']
-        print(f"Loaded checkpoint from {latest_checkpoint_path} at epoch {start_epoch}")
+            print("Missing Layers (not in checkpoint):", len(missing_layers), total_layers)
+            # print(checkpoint['optimizer_state_dict'].keys())
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch']
+            print(f"Loaded checkpoint from {latest_checkpoint_path} at epoch {start_epoch}")
+        else:
+            start_epoch = 0
+            print("No previous checkpoint found. Starting fresh.")
     else:
         start_epoch = 0
-        print("No previous checkpoint found. Starting fresh.")
+        print("Checkpoint directory does not exist. Starting fresh.")
 else:
-    start_epoch = 0
-    print("Checkpoint directory does not exist. Starting fresh.")
 
-start_epoch = 0
-global_step = 0
+    start_epoch = 0
+    global_step = 0
+
 start_time = time.time()
 
 if use_wandb and gradient_log_freq > 0:
@@ -143,11 +148,15 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
         omega = batch["rotation_rate"].to(device)
         past_action = batch["last_action"].to(device)
         current_action = batch["preference_ranking"].to(device)
+        batch_size = len(images)
 
         optimizer.zero_grad()
-
+        predicted_rewards = torch.zeros((batch_size, num_actions), device=device)
+        
         # Forward Pass
-        predicted_rewards = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size=len(images))
+        for i in range(num_actions):
+            predicted_reward = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action[:,i,:], batch_size)
+            predicted_rewards[:, i] = predicted_reward
 
         # Compute Loss
         loss = criterion(predicted_rewards)
@@ -195,11 +204,13 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
     # Print Epoch Results
     print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
-    scheduler.step(avg_val_loss)  # Adjust learning rate
+    scheduler.step(epoch)  # Adjust learning rate
+
+    # scheduler.step(avg_val_loss)  # Adjust learning rate
 
 
     if (epoch + 1) % 10 == 0:
-        checkpoint_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
+        checkpoint_path = os.path.join(checkpoint_dir, f"model_3_epoch_{epoch+1}.pth")
 
         # Save only trainable parameters (excluding frozen ones)
         trainable_state_dict = {k: v for k, v in model.state_dict().items() if "vision_model" not in k}
