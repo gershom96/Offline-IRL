@@ -141,13 +141,18 @@ for batch in dataloader:
     print("image shape", images.shape)
     print("goal_distance shape", goal_distance.shape)
     # TODO: go permute this and see if the model still ranks the expert action the best
-    order_array = np.arange(batch_size)
-    np.random.shuffle(order_array)
+    shuffle_array = np.arange(batch_size)
+    np.random.shuffle(shuffle_array)
+    unshuffle_array = np.zeros(batch_size).astype(int)
+    for i, shuffle_i in enumerate(shuffle_array):
+        unshuffle_array[shuffle_i] = i
     # velocity_s[0][0:5] = velocity[order_array[0]][0:5]
-    velocity_s = velocity[order_array]
+    velocity_s = velocity[shuffle_array]
     # Forward pass
     t1 = time.time()
-    reward = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
+    reward_s = model(images[shuffle_array], goal_distance[shuffle_array], heading_error[shuffle_array],
+                     velocity[shuffle_array], omega[shuffle_array], past_action[shuffle_array],
+                     current_action[shuffle_array], batch_size)
     t2 = time.time()
 
     print(f"Inference time: {t2 - t1:.4f} sec")
@@ -155,6 +160,7 @@ for batch in dataloader:
     # print("Reward Output:", reward)
     # print("omega", omega[0][:5])
     # print("velocity", velocity[0][:5])
+    reward = reward_s[unshuffle_array]
     reward = reward.cpu().detach().numpy()
     last_action = past_action.cpu().detach().numpy()
     best_actions = reward.argmax(axis=1)
