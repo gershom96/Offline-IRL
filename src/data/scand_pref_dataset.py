@@ -151,7 +151,7 @@ class SCANDPreferenceDataset(Dataset):
             image = np.array(self.load_image(image))  # Load as NumPy
             data["images"].append(image) # Stack images
 
-            # Store expanded data
+            # Store expanded data, ALL NORMALIZED!!
             data["goal_distance"].append(goal_distance)
             data["heading_error"].append(heading_error)
             data["velocity"].append(velocity)
