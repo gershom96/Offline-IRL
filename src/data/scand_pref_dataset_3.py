@@ -29,9 +29,7 @@ class SCANDPreferenceDataset3(Dataset):
             time_window (int): Number of sequential timesteps to include if time_series=True.
             transform (callable, optional): Optional transform to be applied on images.
         """
-        self.h5_file = h5py.File(h5_file_path, "r")
-        self.length = self.h5_file["preference_ranking"].shape[0]
-        self.sequence_info = self.h5_file["sequence_info"][:]  # (index_within_seq, seq_length)
+        self.h5_file_path = h5_file_path
         self.transform = transform  # Optional image transformations (e.g., resizing, normalization)
 
         # **DINOv2 Transformations (Resize + Normalize)**
@@ -60,19 +58,23 @@ class SCANDPreferenceDataset3(Dataset):
             "preference_ranking": np.array([np.sqrt(0.9598264894150791), np.sqrt(0.023544157241549707)])  # (2,)
         }
 
+        start_idx = 0
         self.group_indices = {}
         self.indices_to_group = []  # Store the group each index belongs to
         
         with h5py.File(self.h5_file_path, "r") as h5_file:  
-            
+
+            self.sequence_info = h5_file["0"]["sequence_info"][:]  # (index_within_seq, seq_length)
+
             self.groups = list(h5_file.keys())
 
             for group in self.groups:
                 group_size = h5_file[group]["goal_distance"].shape[0]
-                self.group_indices[group] = list(range(group_size))  
+                self.group_indices[group] = list(range(start_idx, start_idx + group_size))
                                
                 # Assign indices to groups
                 self.indices_to_group.extend([group] * group_size)
+                start_idx += group_size
 
         self.length = len(self.indices_to_group) # Total dataset size
 
@@ -83,7 +85,6 @@ class SCANDPreferenceDataset3(Dataset):
 
         # Assign weights for each sample based on its group
         self.sample_weights = [self.weights_per_group[self.indices_to_group[i]] for i in range(self.length)]
-
 
     def __len__(self):
         return self.length
@@ -145,11 +146,11 @@ class SCANDPreferenceDataset3(Dataset):
         
         with h5py.File(self.h5_file_path, "r", swmr=True) as h5_file:
             # Load shared state variables (Expand them for 25 actions **inside the dataset**)
-            goal_distance = self.h5_file["goal_distance"][local_idx]  # (1,)
-            heading_error = self.h5_file["heading_error"][local_idx]  # (1,)
-            velocity = self.h5_file["v"][local_idx]  # (1,)
-            omega = self.h5_file["omega"][local_idx]  # (1,)
-            last_action = self.h5_file["last_action"][local_idx]  # (2,)
+            goal_distance = h5_file[group]["goal_distance"][local_idx]  # (1,)
+            heading_error = h5_file[group]["heading_error"][local_idx]  # (1,)
+            velocity = h5_file[group]["v"][local_idx]  # (1,)
+            omega = h5_file[group]["omega"][local_idx]  # (1,)
+            last_action = h5_file[group]["last_action"][local_idx]  # (2,)
 
             # Standardize the numerical inputs
             goal_distance = self.standardize(goal_distance, "goal_distance")
@@ -166,7 +167,7 @@ class SCANDPreferenceDataset3(Dataset):
             last_action = np.tile(last_action, (25, 1))  
 
             # Load per-action data
-            preference_ranking = self.h5_file["preference_ranking"][local_idx]  
+            preference_ranking = h5_file[group]["preference_ranking"][local_idx]  
             preference_ranking = self.standardize(preference_ranking, "preference_ranking")  
 
             # **Randomly shuffle the action order**
@@ -178,7 +179,7 @@ class SCANDPreferenceDataset3(Dataset):
             preference_ranking = preference_ranking[perm_]  
 
         # Load image
-            image = self.h5_file["image"][i]
+            image = h5_file[group]["image"][local_idx]
             image = np.array(self.load_image(image))  # Load as NumPy
             data["images"].append(image) # Stack images
 
@@ -195,7 +196,7 @@ class SCANDPreferenceDataset3(Dataset):
             for key in data.keys():
                 
                 if key == "pref_idx":
-                    data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.long))
+                    data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.int64))
                 else:
                     data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.float32))
 

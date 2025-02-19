@@ -1,3 +1,8 @@
+"""
+This is for single action. Takes a very long time to train 
+
+"""
+
 import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
@@ -38,7 +43,7 @@ class ScaledTanh(nn.Module):
         return torch.tanh(self.alpha * x)
     
 # Reward Model
-class RewardModelSCAND3(nn.Module):
+class RewardModelSCAND4(nn.Module):
     def __init__(self, num_queries=4):  # Multi-query support
         super().__init__()
 

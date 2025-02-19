@@ -10,13 +10,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from data.nuscenes_pref_dataset import NuScenesPreferenceDataset
 from data.scand_pref_dataset import SCANDPreferenceDataset
 from data.scand_pref_dataset_2 import SCANDPreferenceDataset2
-
+from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 
 scand = True
 # Paths
 
 if(scand):
-    h5_file =  "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
+    h5_file =  "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped.h5"
 else:
     h5_file = "/media/gershom/Media/Datasets/NuScenes/H5/nuscenes_preference_data.h5"
     nuscenes_dataset_path = "/media/gershom/Media/Datasets/NuScenes"
@@ -32,8 +32,8 @@ else:
 
 
 if(scand):
-    dataset = SCANDPreferenceDataset2(h5_file, time_window=1)
-    n = len(dataset)
+    dataset = SCANDPreferenceDataset3(h5_file)
+    n = dataset.length
     camera_labels = [
             'CAM_FRONT']
 else:
@@ -73,6 +73,7 @@ axs = None
 for i in range(n):
     sample = dataset[i]
 
+    print(f"Group: {dataset.indices_to_group[i]}")
     print(f"Sample : {i}/{n}")
     print(sample["goal_distance"].shape)
     print("Goal Distance:", sample["goal_distance"][0][0])
@@ -81,11 +82,12 @@ for i in range(n):
     print("Rotation Rate:", sample["rotation_rate"][0][0].numpy())
     print("Preference Ranking Shape:", sample["preference_ranking"].shape)
     print("Preference Indices Shape:", sample["pref_idx"].shape)
-    print("Preference Ranking Top3:", sample["preference_ranking"][0][0], sample["preference_ranking"][0][1], sample["preference_ranking"][0][2])
+    print("Preference Ranking Top3:", sample["preference_ranking"][0], sample["preference_ranking"][1], sample["preference_ranking"][2])
     print("Last Action: ", sample["last_action"][0][0])
+    print("Last Action: ", sample["last_action"][0][1])
 
     # ---- Display the Images ----
-    images = sample["images"][0]  # Shape: [#Cameras, 3, H, W]
+    images = sample["images"]  # Shape: [#Cameras, 3, H, W]
     num_cameras = images.shape[0]
     print("No. Cameras:", num_cameras)
 
@@ -103,7 +105,8 @@ for i in range(n):
         current_num_cameras = num_cameras
 
     # Now update the images in the existing axes.
-    for idx, img_tensor in enumerate(images):
+    for idx, img_tensor in enumerate([images]):
+        print(img_tensor.shape)
         img = img_tensor.permute(1, 2, 0).numpy().astype('uint8')  # [H, W, 3]
         if not scand:
             # For nuScenes, use the mapping (if available).

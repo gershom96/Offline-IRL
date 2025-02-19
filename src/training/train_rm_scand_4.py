@@ -5,12 +5,13 @@ import os
 import time
 import datetime
 import wandb
+import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
-from data.scand_pref_dataset_2 import SCANDPreferenceDataset2
+from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 
 from utils.reward_model_scand_3 import RewardModelSCAND3
 from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
@@ -20,10 +21,12 @@ from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
 
-h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
+train_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_train.h5"
+val_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_test.h5"
+
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
-load_files = True
-BATCH_SIZE = 256 
+load_files = False
+BATCH_SIZE = 32 
 LEARNING_RATE = 3e-4
 NUM_QUERIES = 8
 HIDDEN_DIM = 768
@@ -40,14 +43,14 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Load Dataset and Split
-dataset = SCANDPreferenceDataset2(h5_file)
-train_size = int(train_val_split * len(dataset))
-val_size = len(dataset) - train_size
-train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+train_dataset = SCANDPreferenceDataset3(train_h5_path)
+val_dataset = SCANDPreferenceDataset3(train_h5_path)
 
+train_sampler = WeightedRandomSampler(weights=train_dataset.sample_weights, num_samples=len(train_dataset), replacement=True)
+val_sampler = WeightedRandomSampler(weights=val_dataset.sample_weights, num_samples=len(val_dataset), replacement=True)
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=num_workers, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=num_workers, pin_memory=True)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, sampler = train_sampler)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, sampler = val_sampler)
 
 run_config = {
     "learning_rate": LEARNING_RATE,

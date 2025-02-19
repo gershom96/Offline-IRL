@@ -169,13 +169,14 @@ class SCANDPreferenceDataset2(Dataset):
         for key in data.keys():
             if self.time_window == 1:
                 if key == "pref_idx":
-                    data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.long))
+                    data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.int64))
                 else:
                     data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.float32))
 
             else:
                 if key == "pref_idx":
-                    data[key] = torch.from_numpy(np.array(data[key], dtype=np.long))
+                    data[key] = torch.from_numpy(np.array(data[key], dtype=np.int64
+))
                 else:
                     data[key] = torch.from_numpy(np.array(data[key], dtype=np.float32))
         return data
