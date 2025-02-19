@@ -116,6 +116,7 @@ class SCANDPreferenceDataset(Dataset):
             "velocity": [],
             "rotation_rate": [],
             "preference_ranking": [],
+            "preference_scores": [],
             "images": [],
             "last_action": []
         }
@@ -145,18 +146,20 @@ class SCANDPreferenceDataset(Dataset):
             # Load per-action data (Already 25 actions)
             preference_ranking = self.h5_file["preference_ranking"][i]  # (25, 2)
             preference_ranking = self.standardize(preference_ranking, "preference_ranking")  # Standardize
+            preference_scores = self.h5_file["preference_scores"][i]  # (25, 1)
 
             # Load image
             image = self.h5_file["image"][i]
             image = np.array(self.load_image(image))  # Load as NumPy
             data["images"].append(image) # Stack images
 
-            # Store expanded data
+            # Store expanded data, ALL NORMALIZED!!
             data["goal_distance"].append(goal_distance)
             data["heading_error"].append(heading_error)
             data["velocity"].append(velocity)
             data["rotation_rate"].append(omega)
             data["preference_ranking"].append(preference_ranking)
+            data["preference_scores"].append(preference_scores)
             data["last_action"].append(last_action)
 
         # Convert lists to tensors

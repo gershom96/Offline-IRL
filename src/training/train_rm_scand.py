@@ -15,6 +15,8 @@ from utils.reward_model_scand import RewardModelSCAND
 from utils.reward_model_scand_2 import RewardModelSCAND2
 
 from utils.plackett_luce_loss import PL_Loss
+from scipy.stats import rankdata
+import numpy as np
 
 # user defined params;
 project_name = "Offline-IRL"
@@ -134,7 +136,8 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
     model.train()
     train_loss = 0.0
     batch_count = 0
-
+    rank_diff = 0
+    # Training Loop (Per Batch Logging)
     for batch in train_loader:
         images = batch["images"].to(device)
         goal_distance = batch["goal_distance"].to(device)
@@ -143,7 +146,7 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
         omega = batch["rotation_rate"].to(device)
         past_action = batch["last_action"].to(device)
         current_action = batch["preference_ranking"].to(device)
-
+        preference_scores = batch["preference_scores"]
         optimizer.zero_grad()
 
         # Forward Pass
@@ -158,6 +161,15 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
 
         train_loss += loss.item()
         writer.add_scalar("charts/train_loss", loss.item(), global_step)
+
+        reward = predicted_rewards.cpu().detach().numpy()
+        preference_scores = preference_scores.cpu().detach().numpy().squeeze(-1)
+        reward_ranks = rankdata(reward, axis=1)
+        preference_ranks = rankdata(preference_scores, axis=1)
+        avg_rank_diff_per_batch = np.abs(reward_ranks - preference_ranks).sum() / len(reward)
+        rank_diff += avg_rank_diff_per_batch
+        writer.add_scalar("charts/avg_rank_diff_per_batch", avg_rank_diff_per_batch, global_step)
+
         batch_count += 1
         global_step += 1
 
@@ -168,12 +180,16 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
             writer.add_scalar("epoch", epoch, global_step)
 
     avg_train_loss = train_loss / len(train_loader)
+    avg_rank_diff = train_loss / len(train_loader)
     writer.add_scalar("charts/avg_train_loss", avg_train_loss, global_step)
+    writer.add_scalar("charts/avg_train_rank_diff", avg_rank_diff, global_step)
+    writer.add_scalar("epoch/avg_train_loss", avg_train_loss, epoch)
     writer.add_scalar("epoch", epoch, global_step)
 
     # Validation Loop
     model.eval()
     val_loss = 0.0
+    rank_diff = 0.0
     with torch.no_grad():
         for batch in val_loader:
             images = batch["images"].to(device)
@@ -183,13 +199,24 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
             omega = batch["rotation_rate"].to(device)
             past_action = batch["last_action"].to(device)
             current_action = batch["preference_ranking"].to(device)
+            preference_scores = batch["preference_scores"]
 
             predicted_rewards = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size=len(images))
             loss = criterion(predicted_rewards)
+
+            reward = predicted_rewards.cpu().detach().numpy()
+            preference_scores = preference_scores.cpu().detach().numpy().squeeze(-1)
+            reward_ranks = rankdata(reward, axis=1)
+            preference_ranks = rankdata(preference_scores, axis=1)
+            avg_rank_diff_per_batch = np.abs(reward_ranks - preference_ranks).sum() / len(reward)
+            rank_diff += avg_rank_diff_per_batch
             val_loss += loss.item()
 
     avg_val_loss = val_loss / len(val_loader)
+    avg_rank_diff = rank_diff / len(val_loader)
     writer.add_scalar("charts/avg_val_loss", avg_val_loss, global_step)
+    writer.add_scalar("charts/avg_val_rank_diff", avg_rank_diff, global_step)
+    writer.add_scalar("epoch/avg_val_loss", avg_val_loss, epoch)
     writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]['lr'], global_step)
 
     # Print Epoch Results
