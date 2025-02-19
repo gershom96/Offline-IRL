@@ -64,9 +64,22 @@ for batch in dataloader:
 
     print("image shape", images.shape)
     print("goal_distance shape", goal_distance.shape)
+
+    shuffle_array = np.arange(velocity.shape[1])
+    np.random.shuffle(shuffle_array)
+    unshuffle_array = np.zeros(velocity.shape[1]).astype(int)
+    for i, shuffle_i in enumerate(shuffle_array):
+        unshuffle_array[shuffle_i] = i
+
     # Forward pass
     t1 = time.time()
-    reward = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
+    reward_original = model(images, goal_distance, heading_error,
+                     velocity, omega, past_action,
+                     current_action, batch_size)
+
+    reward_shuffle = model(images, goal_distance[:, shuffle_array], heading_error[:, shuffle_array],
+                     velocity[:, shuffle_array], omega[:, shuffle_array], past_action[:, shuffle_array],
+                     current_action[:, shuffle_array], batch_size)
     t2 = time.time()
 
     print(f"Inference time: {t2 - t1:.4f} sec")
@@ -74,9 +87,11 @@ for batch in dataloader:
     # print("Reward Output:", reward)
     # print("omega", omega[0][:5])
     # print("velocity", velocity[0][:5])
-    reward = reward.cpu().detach().numpy()
+    reward_unshuffle = reward_shuffle[:, unshuffle_array]
+    reward_original = reward_original.cpu().detach().numpy()
+    reward_unshuffle = reward_unshuffle.cpu().detach().numpy()
     preference_scores = preference_scores.cpu().detach().numpy().squeeze(-1)
-    reward_ranks = rankdata(reward, axis=1)
+    reward_ranks = rankdata(reward_unshuffle, axis=1)
     preference_ranks = rankdata(preference_scores, axis=1)
     avg_rank_diff_per_batch = np.abs(reward_ranks - preference_ranks).sum() / batch_size
     ideal_rank_diff_per_batch = np.abs(np.flip(np.arange(0, 25)) - preference_ranks).sum() / batch_size

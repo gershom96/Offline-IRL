@@ -25,11 +25,11 @@ h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
 checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 # checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
-BATCH_SIZE = 96 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
-LEARNING_RATE = 0.000145
+BATCH_SIZE = 116 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
+LEARNING_RATE = 0.0002
 NUM_QUERIES = 12
 NUM_HEADS = 8
-N_EPOCHS = 50
+N_EPOCHS = 100
 ADDON_ATTN_STACKS = 2
 ACTIVATION_TYPE = "relu"
 DROPOUT_RATE = 0.0
@@ -39,7 +39,7 @@ batch_print_freq = 10
 gradient_log_freq = 100
 save_model_freq = 5
 # notes = "jim-desktop new loss fn"
-notes = "gammawks03"
+notes = "gammawks03, now with shuffle"
 use_wandb = True
 save_model = True
 save_model_summary = True
@@ -171,6 +171,7 @@ for epoch in range(N_EPOCHS):
     model.eval()
     val_loss = 0.0
     rank_diff = 0.0
+    rank_diff_shuffled = 0.0
     with torch.no_grad():
         for batch in val_loader:
             images = batch["images"].to(device)
@@ -182,21 +183,42 @@ for epoch in range(N_EPOCHS):
             current_action = batch["preference_ranking"].to(device)
             preference_scores = batch["preference_scores"]
 
+            shuffle_array = np.arange(velocity.shape[1])
+            np.random.shuffle(shuffle_array)
+            unshuffle_array = np.zeros(velocity.shape[1]).astype(int)
+            for i, shuffle_i in enumerate(shuffle_array):
+                unshuffle_array[shuffle_i] = i
+
             predicted_rewards = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size=len(images))
+            shuffled_rewards = model(images, goal_distance[:, shuffle_array], heading_error[:, shuffle_array],
+                                   velocity[:, shuffle_array], omega[:, shuffle_array], past_action[:, shuffle_array],
+                                   current_action[:, shuffle_array], len(images))
+
             loss = criterion(predicted_rewards)
 
-            reward = predicted_rewards.cpu().detach().numpy()
+            reward_original = predicted_rewards.cpu().detach().numpy()
+            reward_unshuffle = shuffled_rewards[:, unshuffle_array].cpu().detach().numpy()
             preference_scores = preference_scores.cpu().detach().numpy().squeeze(-1)
-            reward_ranks = rankdata(reward, axis=1)
+
+            reward_ranks = rankdata(reward_original, axis=1)
+            reward_ranks_unshuffle = rankdata(reward_unshuffle, axis=1)
             preference_ranks = rankdata(preference_scores, axis=1)
-            avg_rank_diff_per_batch = np.abs(reward_ranks - preference_ranks).sum() / len(reward)
+
+            avg_rank_diff_per_batch = np.abs(reward_ranks - preference_ranks).sum() / len(reward_ranks)
+            unshuffled_avg_rank_diff = np.abs(reward_ranks_unshuffle - preference_ranks).sum() / len(reward_ranks_unshuffle)
+
             rank_diff += avg_rank_diff_per_batch
+            rank_diff_shuffled += unshuffled_avg_rank_diff
+
+
             val_loss += loss.item()
 
     avg_val_loss = val_loss / len(val_loader)
     avg_rank_diff = rank_diff / len(val_loader)
+    avg_rank_diff_shuffled = rank_diff_shuffled / len(val_loader)
     writer.add_scalar("charts/avg_val_loss", avg_val_loss, global_step)
     writer.add_scalar("charts/avg_val_rank_diff", avg_rank_diff, global_step)
+    writer.add_scalar("charts/avg_val_rank_diff_shuffled", avg_rank_diff_shuffled, global_step)
     writer.add_scalar("epoch/avg_val_loss", avg_val_loss, epoch)
     writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]['lr'], global_step)
 
