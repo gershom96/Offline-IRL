@@ -118,7 +118,7 @@ class RewardModelSCAND2(nn.Module):
             nn.Linear(256, 128),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(128, 1),
+            nn.Linear(128, 1)
             # ScaledTanh(alpha=2.0)  # Normalize output range
         )
 

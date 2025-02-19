@@ -12,8 +12,8 @@ class PL_Loss(torch.nn.Module):
         """
         # Reorder rewards based on preference indices
         
-        # print(rewards.shape, pref_idx.shape)
-        ordered_rewards = torch.gather(rewards, 1, pref_idx)  # Align with true preference ranking
+        # print(rewards.shape, pref_idx.dtype)
+        ordered_rewards = torch.gather(rewards, 1, pref_idx[:,:,0])  # Align with true preference ranking
 
         # Compute PL Loss
         log_denominators = torch.logcumsumexp(ordered_rewards.flip(dims=[1]), dim=1).flip(dims=[1])

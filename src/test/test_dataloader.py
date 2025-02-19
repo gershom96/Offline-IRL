@@ -16,7 +16,7 @@ scand = True
 # Paths
 
 if(scand):
-    h5_file = "/media/gershom/Media/Datasets/SCAND/scand_preference_data.h5"
+    h5_file =  "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 else:
     h5_file = "/media/gershom/Media/Datasets/NuScenes/H5/nuscenes_preference_data.h5"
     nuscenes_dataset_path = "/media/gershom/Media/Datasets/NuScenes"
@@ -74,7 +74,7 @@ for i in range(n):
     sample = dataset[i]
 
     print(f"Sample : {i}/{n}")
-    # print(sample["goal_distance"].shape)
+    print(sample["goal_distance"].shape)
     print("Goal Distance:", sample["goal_distance"][0][0])
     print("Heading Error:", sample["heading_error"][0][0])
     print("Velocity:", sample["velocity"][0][0].numpy())

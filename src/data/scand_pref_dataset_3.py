@@ -11,8 +11,8 @@ from io import BytesIO
 import torchvision.transforms as transforms
 
 
-class SCANDPreferenceDataset2(Dataset):
-    def __init__(self, h5_file_path:str, mode:int = 1, time_window:int = 1, transform = None):
+class SCANDPreferenceDataset3(Dataset):
+    def __init__(self, h5_file_path:str, mode:int = 1, transform = None):
         """
         Dataloader for annotated scan-d dataset
         annotated H5 file keys:
@@ -31,7 +31,6 @@ class SCANDPreferenceDataset2(Dataset):
         """
         self.h5_file = h5py.File(h5_file_path, "r")
         self.length = self.h5_file["preference_ranking"].shape[0]
-        self.time_window = time_window
         self.sequence_info = self.h5_file["sequence_info"][:]  # (index_within_seq, seq_length)
         self.transform = transform  # Optional image transformations (e.g., resizing, normalization)
 
@@ -60,6 +59,31 @@ class SCANDPreferenceDataset2(Dataset):
             "last_action": np.array([np.sqrt(0.95989415), np.sqrt(0.02352065)]),  # (2,)
             "preference_ranking": np.array([np.sqrt(0.9598264894150791), np.sqrt(0.023544157241549707)])  # (2,)
         }
+
+        self.group_indices = {}
+        self.indices_to_group = []  # Store the group each index belongs to
+        
+        with h5py.File(self.h5_file_path, "r") as h5_file:  
+            
+            self.groups = list(h5_file.keys())
+
+            for group in self.groups:
+                group_size = h5_file[group]["goal_distance"].shape[0]
+                self.group_indices[group] = list(range(group_size))  
+                               
+                # Assign indices to groups
+                self.indices_to_group.extend([group] * group_size)
+
+        self.length = len(self.indices_to_group) # Total dataset size
+
+        # Compute sampling weights
+        self.weights_per_group = {
+            group: self.length / (len(self.groups) * len(self.group_indices[group])) for group in self.groups
+        }
+
+        # Assign weights for each sample based on its group
+        self.sample_weights = [self.weights_per_group[self.indices_to_group[i]] for i in range(self.length)]
+
 
     def __len__(self):
         return self.length
@@ -103,7 +127,6 @@ class SCANDPreferenceDataset2(Dataset):
         return indices
 
     def __getitem__(self, idx):
-        indices = self.get_time_series_indices(idx)
 
         # Data aggregation
         data: dict[str | Any, list[Any] | Tensor] = {
@@ -117,14 +140,17 @@ class SCANDPreferenceDataset2(Dataset):
             "pref_idx": []
         }
 
-        for i in indices:
+        group = self.indices_to_group[idx]  # Get the group name
+        local_idx = self.group_indices[group].index(idx)  # Convert global index to local within the group
+        
+        with h5py.File(self.h5_file_path, "r", swmr=True) as h5_file:
             # Load shared state variables (Expand them for 25 actions **inside the dataset**)
-            goal_distance = self.h5_file["goal_distance"][i]  # (1,)
-            heading_error = self.h5_file["heading_error"][i]  # (1,)
-            velocity = self.h5_file["v"][i]  # (1,)
-            omega = self.h5_file["omega"][i]  # (1,)
-            last_action = self.h5_file["last_action"][i]  # (2,)
-    
+            goal_distance = self.h5_file["goal_distance"][local_idx]  # (1,)
+            heading_error = self.h5_file["heading_error"][local_idx]  # (1,)
+            velocity = self.h5_file["v"][local_idx]  # (1,)
+            omega = self.h5_file["omega"][local_idx]  # (1,)
+            last_action = self.h5_file["last_action"][local_idx]  # (2,)
+
             # Standardize the numerical inputs
             goal_distance = self.standardize(goal_distance, "goal_distance")
             heading_error = self.standardize(heading_error, "heading_error")
@@ -140,7 +166,7 @@ class SCANDPreferenceDataset2(Dataset):
             last_action = np.tile(last_action, (25, 1))  
 
             # Load per-action data
-            preference_ranking = self.h5_file["preference_ranking"][i]  
+            preference_ranking = self.h5_file["preference_ranking"][local_idx]  
             preference_ranking = self.standardize(preference_ranking, "preference_ranking")  
 
             # **Randomly shuffle the action order**
@@ -151,7 +177,7 @@ class SCANDPreferenceDataset2(Dataset):
             # **Apply permutation to all action-related tensors**
             preference_ranking = preference_ranking[perm_]  
 
-            # Load image
+        # Load image
             image = self.h5_file["image"][i]
             image = np.array(self.load_image(image))  # Load as NumPy
             data["images"].append(image) # Stack images
@@ -165,17 +191,13 @@ class SCANDPreferenceDataset2(Dataset):
             data["last_action"].append(last_action)
             data["pref_idx"].append(pref_idx)
 
-        # Convert lists to tensors
-        for key in data.keys():
-            if self.time_window == 1:
+            # Convert lists to tensors
+            for key in data.keys():
+                
                 if key == "pref_idx":
                     data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.long))
                 else:
                     data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.float32))
 
-            else:
-                if key == "pref_idx":
-                    data[key] = torch.from_numpy(np.array(data[key], dtype=np.long))
-                else:
-                    data[key] = torch.from_numpy(np.array(data[key], dtype=np.float32))
-        return data
+               
+            return data

@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from data.scand_pref_dataset_2 import SCANDPreferenceDataset2
 
 from utils.reward_model_scand_3 import RewardModelSCAND3
@@ -24,7 +24,7 @@ h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
 load_files = True
 BATCH_SIZE = 256 
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 3e-4
 NUM_QUERIES = 8
 HIDDEN_DIM = 768
 N_EPOCHS = 200
@@ -44,6 +44,7 @@ dataset = SCANDPreferenceDataset2(h5_file)
 train_size = int(train_val_split * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=num_workers, pin_memory=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=num_workers, pin_memory=True)
@@ -84,7 +85,6 @@ writer.add_text(
 )
 
 # Define Model, Loss, Optimizer
-# model = RewardModelSCAND(num_queries=NUM_QUERIES).to(device)
 model = RewardModelSCAND3(num_queries=NUM_QUERIES).to(device)
 criterion = PL_Loss_v2()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)

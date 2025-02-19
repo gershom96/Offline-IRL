@@ -89,6 +89,15 @@ class RewardModelSCAND3(nn.Module):
 
         self.fusion_norm = nn.LayerNorm(self.hidden_dim)
 
+        # **MLP-based Query Fusion**
+        self.query_fusion_mlp = nn.Sequential(
+            nn.Linear(self.num_queries * self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(self.hidden_dim, self.hidden_dim),  # Output fused representation
+            nn.LayerNorm(self.hidden_dim)  # Normalize fused representation
+        )
+
         # Reward Prediction Head
         self.reward_head = nn.Sequential(
             nn.Linear(self.hidden_dim, 512), nn.ReLU(), nn.Dropout(0.1),
@@ -145,7 +154,7 @@ class RewardModelSCAND3(nn.Module):
         fused_features = fused_features + state_queries
         # print(fused_features.shape)
         fused_features = fused_features.view(batch_size, 25, self.num_queries, -1)        
-        fused_features = fused_features.view(batch_size, 25, -1) # Shape: (batch_size, 25, num_queries * hidden_dim)
+        fused_features = fused_features.reshape(batch_size, 25, -1)  # Shape: (batch_size, 25, num_queries * hidden_dim)
 
         # MLP-based Query Fusion
         fused_features = self.query_fusion_mlp(fused_features) # Shape: (batch_size, hidden_dim)
