@@ -9,10 +9,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from data.scand_pref_dataset import SCANDPreferenceDataset
 from utils.reward_model_scand import RewardModelSCAND
 from utils.plackett_luce_loss import PL_Loss
+
 from torchinfo import summary
 from scipy.stats import rankdata
 import numpy as np
@@ -23,26 +24,28 @@ exp_name = "SCAND_test"
 # h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
 h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
 checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
+latest_checkpoint_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/runs/SCAND_test__2025-02-17 22:50:53/SCAND_test_epoch50.pth"
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 # checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
-BATCH_SIZE = 116 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
-LEARNING_RATE = 0.0002
+load_files = False
+BATCH_SIZE = 64 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
+LEARNING_RATE = 3e-4
 NUM_QUERIES = 12
 NUM_HEADS = 8
 N_EPOCHS = 100
 ADDON_ATTN_STACKS = 2
 ACTIVATION_TYPE = "relu"
-DROPOUT_RATE = 0.0
+DROPOUT_RATE = 0.1
 train_val_split = 0.8
 num_workers = 4
 batch_print_freq = 10
 gradient_log_freq = 100
 save_model_freq = 5
 # notes = "jim-desktop new loss fn"
-notes = "gammawks03, now with shuffle"
-use_wandb = True
-save_model = True
-save_model_summary = True
+notes = "gammawks03"
+use_wandb = False
+save_model = False
+save_model_summary = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
@@ -51,6 +54,9 @@ dataset = SCANDPreferenceDataset(h5_file)
 train_size = int(train_val_split * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+train_sampler = WeightedRandomSampler(weights=train_dataset.sample_weights, num_samples=len(train_dataset), replacement=True)
+val_sampler = WeightedRandomSampler(weights=val_dataset.sample_weights, num_samples=len(val_dataset), replacement=True)
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=num_workers, pin_memory=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)
@@ -106,14 +112,18 @@ with open(f'runs/{run_name}/config.yaml', 'w') as file:
 
 criterion = PL_Loss()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
-global_step = 0
-start_time = time.time()
-if use_wandb:
-    if gradient_log_freq > 0:
-        wandb.watch(model, log_freq=gradient_log_freq)
+scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
+start_epoch = 0
 
-for epoch in range(N_EPOCHS):
+global_step = 0
+
+start_time = time.time()
+
+if use_wandb and gradient_log_freq > 0:
+    wandb.watch(model, log_freq=gradient_log_freq)
+
+# Training Loop
+for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
     model.train()
     train_loss = 0.0
     batch_count = 0
@@ -128,13 +138,16 @@ for epoch in range(N_EPOCHS):
         past_action = batch["last_action"].to(device)
         current_action = batch["preference_ranking"].to(device)
         preference_scores = batch["preference_scores"]
+        perms = batch["pref_idx"].to(device)
+        batch_size = len(images)
+
         optimizer.zero_grad()
 
         # Forward Pass
         predicted_rewards = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size=len(images))  # (batch_size, 25)
 
         # Compute Loss
-        loss = criterion(predicted_rewards)
+        loss = criterion(predicted_rewards, perms)
 
         # Backpropagation
         loss.backward()
@@ -154,9 +167,9 @@ for epoch in range(N_EPOCHS):
         batch_count += 1
         global_step += 1
 
-        if batch_count % batch_print_freq == 0:  # Log every 10 batches
+        if batch_count % batch_print_freq == 0:
             SPS = global_step / (time.time() - start_time)
-            print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f}")
+            print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Batch {batch_count} | Train Loss: {loss.item():.4f}, steps per second: {SPS:.3f} | LR: {optimizer.param_groups[0]['lr']}")
             writer.add_scalar("charts/SPS", SPS, global_step)
             writer.add_scalar("epoch", epoch, global_step)
 
@@ -167,7 +180,7 @@ for epoch in range(N_EPOCHS):
     writer.add_scalar("epoch/avg_train_loss", avg_train_loss, epoch)
     writer.add_scalar("epoch", epoch, global_step)
 
-    # Validation Loop (At End of Each Epoch)
+    # Validation Loop
     model.eval()
     val_loss = 0.0
     rank_diff = 0.0
@@ -194,7 +207,7 @@ for epoch in range(N_EPOCHS):
                                    velocity[:, shuffle_array], omega[:, shuffle_array], past_action[:, shuffle_array],
                                    current_action[:, shuffle_array], len(images))
 
-            loss = criterion(predicted_rewards)
+            loss = criterion(predicted_rewards, perms)
 
             reward_original = predicted_rewards.cpu().detach().numpy()
             reward_unshuffle = shuffled_rewards[:, unshuffle_array].cpu().detach().numpy()
@@ -225,7 +238,7 @@ for epoch in range(N_EPOCHS):
     # Print Epoch Results
     print(f"Epoch [{epoch+1}/{N_EPOCHS}] | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
-    scheduler.step(avg_val_loss)  # Adjust learning rate
+    scheduler.step(epoch)  # Adjust learning rate
 
 
     if (epoch + 1) % save_model_freq == 0:
@@ -233,7 +246,7 @@ for epoch in range(N_EPOCHS):
         checkpoint_path = f"runs/{run_name}/{exp_name}_epoch{epoch + 1}.pth"
 
         # Save only trainable parameters (excluding frozen ones)
-        # trainable_state_dict = {k: v for k, v in model.state_dict().items() if v.requires_grad}
+        # trainable_state_dict = {k: v for k, v in model.state_dict().items() if "vision_model" not in k}
 
         torch.save({
             'epoch': epoch + 1,
