@@ -28,7 +28,7 @@ latest_checkpoint_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 # checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
 load_files = False
-BATCH_SIZE = 64 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
+BATCH_SIZE = 96 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
 LEARNING_RATE = 3e-4
 NUM_QUERIES = 12
 NUM_HEADS = 8
@@ -37,7 +37,7 @@ ADDON_ATTN_STACKS = 2
 ACTIVATION_TYPE = "relu"
 DROPOUT_RATE = 0.1
 train_val_split = 0.8
-num_workers = 4
+num_workers = 1
 batch_print_freq = 10
 gradient_log_freq = 100
 save_model_freq = 5
@@ -47,19 +47,18 @@ use_wandb = False
 save_model = False
 save_model_summary = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
 print(f"Using device: {device}")
 
 # Load Dataset and Split
-dataset = SCANDPreferenceDataset(h5_file)
-train_size = int(train_val_split * len(dataset))
-val_size = len(dataset) - train_size
-train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+train_dataset = SCANDPreferenceDataset(h5_file)
+val_dataset = SCANDPreferenceDataset(h5_file)
 
 train_sampler = WeightedRandomSampler(weights=train_dataset.sample_weights, num_samples=len(train_dataset), replacement=True)
 val_sampler = WeightedRandomSampler(weights=val_dataset.sample_weights, num_samples=len(val_dataset), replacement=True)
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=num_workers, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=True, sampler = train_sampler)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=2, pin_memory=True, sampler = val_sampler)
 
 run_config = {
     "learning_rate": LEARNING_RATE,

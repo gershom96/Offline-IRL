@@ -73,7 +73,7 @@ class RewardModelSCAND(nn.Module):
             nn.Linear(256, 512), self.activation_fn(), nn.Dropout(dropout),
             nn.Linear(512, self.hidden_dim)
         )
-        self.state_norm = nn.LayerNorm(self.hidden_dim)
+        self.state_queries_norm = nn.LayerNorm(self.hidden_dim)
 
         # Multi-Query Learnable Queries
         self.state_query_proj = nn.ModuleList([
@@ -104,7 +104,7 @@ class RewardModelSCAND(nn.Module):
             embed_dim=self.hidden_dim,
             num_heads=self.num_heads,
             batch_first=True,
-            dropout=nn.Dropout(dropout),
+            dropout=dropout,
             )
         self.attn_norm_1 = nn.LayerNorm(self.hidden_dim)
         self.addon_mlp_1 = nn.Sequential(
@@ -118,7 +118,7 @@ class RewardModelSCAND(nn.Module):
             embed_dim=self.hidden_dim,
             num_heads=self.num_heads,
             batch_first=True,
-            dropout=nn.Dropout(dropout),
+            dropout=dropout,
         )
         self.attn_norm_2 = nn.LayerNorm(self.hidden_dim)
         self.addon_mlp_2 = nn.Sequential(

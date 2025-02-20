@@ -172,7 +172,7 @@ class SCANDPreferenceDataset(Dataset):
             # Load per-action data
             preference_ranking = h5_file[group]["preference_ranking"][local_idx]
             preference_ranking = self.standardize(preference_ranking, "preference_ranking")
-            preference_scores = h5_file["preference_scores"][local_idx]  # (25, 1)
+            preference_scores = h5_file[group]["preference_scores"][local_idx]  # (25, 1)
 
             # **Randomly shuffle the action order**
             perm_ = np.random.permutation(25)
