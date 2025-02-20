@@ -1,0 +1,15 @@
+batch_size:
+  value: 32
+num_queries:
+  value: 8
+num_heads:
+  value: 8
+addon_attn_stacks:
+  value: 0
+activation_type:
+  value: "relu"
+dropout:
+  value: 0.1
+learning_rate:
+  value: 5e-4
+
