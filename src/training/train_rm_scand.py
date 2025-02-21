@@ -21,16 +21,16 @@ import numpy as np
 # user defined params;
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
-# h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data.h5"
-train_h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data_train.h5"
-test_h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data_train.h5"
+# train_h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data_train.h5"
+train_h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data_train.h5"
+test_h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data_train.h5"
 checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
 latest_checkpoint_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/runs/SCAND_test__2025-02-17 22:50:53/SCAND_test_epoch50.pth"
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
 # checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/models/checkpoints"
 load_files = False
-BATCH_SIZE = 128 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
-LEARNING_RATE = 2e-4
+BATCH_SIZE = 120 # 128 = 23.1GB 64 = 12GB, 32 = 6.9GB VRAM
+LEARNING_RATE = 0.00025
 NUM_QUERIES = 12
 NUM_HEADS = 8
 N_EPOCHS = 100
@@ -38,12 +38,12 @@ ADDON_ATTN_STACKS = 2
 ACTIVATION_TYPE = "relu"
 DROPOUT_RATE = 0.1
 train_val_split = 0.8
-num_workers = 5
+num_workers = 8
 batch_print_freq = 10
 gradient_log_freq = 100
 save_model_freq = 5
-# notes = "jim-desktop new loss fn"
-notes = "big update from main"
+notes = "jim-desktop put back the permutation in val set"
+# notes = "gammawks03"
 use_wandb = True
 save_model = True
 save_model_summary = True
@@ -203,7 +203,7 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
             preference_scores = preference_scores.cpu().detach().numpy().squeeze(-1)
             reward_ranks = rankdata(reward_original, axis=1)
             preference_ranks = rankdata(preference_scores, axis=1)
-            avg_rank_diff_per_batch = np.abs(reward_ranks - preference_ranks).sum() / len(reward_ranks)
+            avg_rank_diff_per_batch = np.abs(reward_ranks - preference_ranks).sum() / len(reward_original)
             rank_diff += avg_rank_diff_per_batch
             val_loss += loss.item()
 
