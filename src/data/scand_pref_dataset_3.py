@@ -41,21 +41,21 @@ class SCANDPreferenceDataset3(Dataset):
         ])
 
         self.means = {
-            "goal_distance": 24.5542033,
-            "heading_error": -0.01489864,
-            "velocity": 0.27514081,
-            "omega": -0.0022823,
-            "last_action": np.array([0.27517195, -0.00227932]),  # (2,)
-            "preference_ranking": np.array([0.27514378440764425, -0.002269040021361245])  # (2,)
+            "goal_distance": 24.8459378,
+            "heading_error": -0.01240172,
+            "velocity": 0.91916239,
+            "omega": -0.00177657,
+            "last_action": np.array([0.91924777, -0.00177915]),  # (2,)
+            "preference_ranking": np.array([0.9191205964026605, -0.0017618069756301425])  # (2,)
         }
 
         self.stds = {
-            "goal_distance": np.sqrt(259.24568856),
-            "heading_error": np.sqrt(0.30830199),
-            "velocity": np.sqrt(0.95987594),
-            "omega": np.sqrt(0.02352064),
-            "last_action": np.array([np.sqrt(0.95989415), np.sqrt(0.02352065)]),  # (2,)
-            "preference_ranking": np.array([np.sqrt(0.9598264894150791), np.sqrt(0.023544157241549707)])  # (2,)
+            "goal_distance": np.sqrt(269.07137664),
+            "heading_error": np.sqrt(0.31416974),
+            "velocity": np.sqrt(0.63170535),
+            "omega": np.sqrt(0.02270943),
+            "last_action": np.array([np.sqrt(0.63164339), np.sqrt(0.02270509)]),  # (2,)
+            "preference_ranking": np.array([np.sqrt(0.631699838954012), np.sqrt(0.022741062629058388)])  # (2,)
         }
 
         start_idx = 0
@@ -151,7 +151,7 @@ class SCANDPreferenceDataset3(Dataset):
             velocity = h5_file[group]["v"][local_idx]  # (1,)
             omega = h5_file[group]["omega"][local_idx]  # (1,)
             last_action = h5_file[group]["last_action"][local_idx]  # (2,)
-
+            # print(f"Last Action: {last_action}")
             # Standardize the numerical inputs
             goal_distance = self.standardize(goal_distance, "goal_distance")
             heading_error = self.standardize(heading_error, "heading_error")
