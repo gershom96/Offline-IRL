@@ -159,6 +159,7 @@ class SCANDPreferenceDataset3(Dataset):
             omega = self.standardize(omega, "omega")
             last_action = self.standardize(last_action, "last_action")
 
+            #print(f"Last Action: {last_action}")
             # Expand shared state variables to (25, x)
             goal_distance = np.tile(goal_distance, (25, 1))  
             heading_error = np.tile(heading_error, (25, 1))  

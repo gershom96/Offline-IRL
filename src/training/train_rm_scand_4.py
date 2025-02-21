@@ -24,8 +24,8 @@ exp_name = "SCAND_test"
 train_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_train.h5"
 val_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_test.h5"
 
-checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
-load_files = False
+checkpoint_dir = "/media/gershom/Media/Datasets/SCAND/"
+load_files = True
 BATCH_SIZE = 32 
 LEARNING_RATE = 3e-4
 NUM_QUERIES = 8
@@ -101,7 +101,7 @@ if (load_files):
         checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pth")]
         if checkpoint_files:
             latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))  # Find latest checkpoint
-            latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_3_epoch_10.pth"
+            latest_checkpoint_path = "/media/gershom/Media/Datasets/SCAND/model_3_epoch_30.pth"
             checkpoint = torch.load(latest_checkpoint_path, map_location=device)
 
             print(f"\nTotal Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
