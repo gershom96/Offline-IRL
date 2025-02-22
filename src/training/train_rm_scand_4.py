@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 
 from utils.reward_model_scand_3 import RewardModelSCAND3
+from utils.reward_model_scand import RewardModelSCAND
 from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
 
 
@@ -21,13 +22,13 @@ from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
 
-train_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_train.h5"
-val_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_test.h5"
+train_h5_path = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data_grouped_train.h5"
+val_h5_path = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data_grouped_test.h5"
 
-checkpoint_dir = "/media/gershom/Media/Datasets/SCAND/"
+checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
 load_files = True
-BATCH_SIZE = 32 
-LEARNING_RATE = 3e-4
+BATCH_SIZE = 256 
+LEARNING_RATE = 5e-5
 NUM_QUERIES = 8
 HIDDEN_DIM = 768
 N_EPOCHS = 200
@@ -39,12 +40,12 @@ gradient_log_freq = 50
 notes = "implementing wandb"
 use_wandb = True
 save_model = True
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Load Dataset and Split
 train_dataset = SCANDPreferenceDataset3(train_h5_path)
-val_dataset = SCANDPreferenceDataset3(train_h5_path)
+val_dataset = SCANDPreferenceDataset3(val_h5_path)
 
 train_sampler = WeightedRandomSampler(weights=train_dataset.sample_weights, num_samples=len(train_dataset), replacement=True)
 val_sampler = WeightedRandomSampler(weights=val_dataset.sample_weights, num_samples=len(val_dataset), replacement=True)
@@ -91,7 +92,7 @@ writer.add_text(
 model = RewardModelSCAND3(num_queries=NUM_QUERIES).to(device)
 criterion = PL_Loss_v2()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
+scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5, T_mult=1, eta_min=5e-7)
 # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
 # Load from latest checkpoint (if available)
@@ -101,7 +102,7 @@ if (load_files):
         checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pth")]
         if checkpoint_files:
             latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))  # Find latest checkpoint
-            latest_checkpoint_path = "/media/gershom/Media/Datasets/SCAND/model_3_epoch_30.pth"
+            latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_3_epoch_40.pth"
             checkpoint = torch.load(latest_checkpoint_path, map_location=device)
 
             print(f"\nTotal Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
@@ -152,7 +153,6 @@ for epoch in range(start_epoch, N_EPOCHS):  # Start from checkpointed epoch
 
         optimizer.zero_grad()
         
-        # print(goal_distance.shape, current_action.shape, perms.shape)
         # Forward pass
         predicted_rewards = model(images, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
 

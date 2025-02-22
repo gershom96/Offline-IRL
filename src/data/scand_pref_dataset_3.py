@@ -41,21 +41,21 @@ class SCANDPreferenceDataset3(Dataset):
         ])
 
         self.means = {
-            "goal_distance": 24.8459378,
-            "heading_error": -0.01240172,
-            "velocity": 0.91916239,
-            "omega": -0.00177657,
-            "last_action": np.array([0.91924777, -0.00177915]),  # (2,)
-            "preference_ranking": np.array([0.9191205964026605, -0.0017618069756301425])  # (2,)
+            "goal_distance": 25.00290765,
+            "heading_error": -0.01144954,
+            "velocity": 1.2836152,
+            "omega": -0.00149038,
+            "last_action": np.array([1.28372591, -0.00149611]),  # (2,)
+            "preference_ranking": np.array([1.2835427186288364, -0.00147476722583554])  # (2,)
         }
 
         self.stds = {
-            "goal_distance": np.sqrt(269.07137664),
-            "heading_error": np.sqrt(0.31416974),
-            "velocity": np.sqrt(0.63170535),
-            "omega": np.sqrt(0.02270943),
-            "last_action": np.array([np.sqrt(0.63164339), np.sqrt(0.02270509)]),  # (2,)
-            "preference_ranking": np.array([np.sqrt(0.631699838954012), np.sqrt(0.022741062629058388)])  # (2,)
+            "goal_distance": np.sqrt(275.01400778),
+            "heading_error": np.sqrt(0.31931658),
+            "velocity": np.sqrt(0.07844775),
+            "omega": np.sqrt(0.02225859),
+            "last_action": np.array([np.sqrt(0.07829221), np.sqrt(0.02225181)]),  # (2,)
+            "preference_ranking": np.array([np.sqrt(0.0785323071548214), np.sqrt(0.022286368831911443)])  # (2,)
         }
 
         start_idx = 0
