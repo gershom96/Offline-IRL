@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 
 from utils.reward_model_scand_3 import RewardModelSCAND3
-from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
+from utils.plackett_luce_loss_v2 import PL_Loss_v2 as PL_Loss_v2
 
 """
 THIS IS VERSION 4 from Gershom's code

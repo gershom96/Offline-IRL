@@ -5,6 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.reward_model_scand import RewardModelSCAND
 from data.scand_pref_dataset import SCANDPreferenceDataset
+from utils.reward_model_scand_3 import RewardModelSCAND3
 import torch
 from torch.utils.data import DataLoader
 from torchvision.transforms.functional import to_pil_image
@@ -33,21 +34,24 @@ def load_reward_model(config_path, model_path):
                              activation=config['activation_type'],
                              # dropout=config['dropout_rate']['value'],
                              ).to(device)
+    # original model used by gershom
+    # reward_model = RewardModelSCAND3(num_queries=config['num_queries']).to(device)
     model_optimizer = optim.AdamW(reward_model.parameters(), lr=config['learning_rate'], weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(model_optimizer, T_0=10, T_mult=2, eta_min=1e-6)
     if partial_load:
         if os.path.exists(model_path):
             checkpoint = torch.load(model_path, map_location=device)
 
             print(f"\nTotal Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
 
-            total_layers = len(model.state_dict().keys())
+            total_layers = len(reward_model.state_dict().keys())
             missing_layers = [key for key in reward_model.state_dict().keys() if key not in checkpoint['model_state_dict']]
             print(f"\n Missing Layers (Expected in Model, but NOT in Checkpoint): {len(missing_layers)}")
             missing, unexpected = reward_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 
             print("Missing Layers (not in checkpoint):", len(missing_layers), total_layers)
             # print(checkpoint['optimizer_state_dict'].keys())
-            model_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            # model_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             epoch = checkpoint['epoch']
 
     else:
@@ -83,7 +87,7 @@ for batch in dataloader:
 
     # Forward pass
     t1 = time.time()
-    reward = model(image, goal_distance, heading_error, velocity, omega, past_action, current_action)
+    reward = model(image, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
     t2 = time.time()
     ordered_reward = torch.gather(reward, 1, perms[:, :, 0])
     preferred_action_reward = ordered_reward[:, 0].cpu().detach().numpy()
