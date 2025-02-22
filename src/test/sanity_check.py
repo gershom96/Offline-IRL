@@ -10,8 +10,6 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision.transforms.functional import to_pil_image
 import torch.optim as optim
-import PIL
-from trajectory_demo import draw_trajectory
 import yaml
 from scipy.stats import rankdata
 
