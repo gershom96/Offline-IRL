@@ -3,6 +3,10 @@ import os
 import matplotlib.pyplot as plt
 from PIL import Image
 import torch
+import numpy as np
+
+from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
+
 
 # Add parent directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -33,6 +37,9 @@ else:
 
 if(scand):
     dataset = SCANDPreferenceDataset3(h5_file)
+    sampler = WeightedRandomSampler(weights=dataset.sample_weights, num_samples=len(dataset), replacement=True)
+    train_loader = DataLoader(dataset, batch_size=1, num_workers=8, pin_memory=True, sampler = sampler)
+
     n = dataset.length
     camera_labels = [
             'CAM_FRONT']
@@ -70,11 +77,10 @@ current_num_cameras = None
 axs = None
 
 # Display Images and Metadata
-for i in range(n):
-    sample = dataset[i]
+for sample in train_loader:
+    
 
-    print(f"Group: {dataset.indices_to_group[i]}")
-    print(f"Sample : {i}/{n}")
+    print(f"Sample : {1}/{n}")
     print(sample["goal_distance"].shape)
     print("Goal Distance:", sample["goal_distance"][0][0])
     print("Heading Error:", sample["heading_error"][0][0])
@@ -82,12 +88,12 @@ for i in range(n):
     print("Rotation Rate:", sample["rotation_rate"][0][0].numpy())
     print("Preference Ranking Shape:", sample["preference_ranking"].shape)
     print("Preference Indices Shape:", sample["pref_idx"].shape)
-    print("Preference Ranking Top3:", sample["preference_ranking"][0], sample["preference_ranking"][1], sample["preference_ranking"][2])
+    print("Preference Ranking Top3:", sample["preference_ranking"][0][0]*np.sqrt(0.63170535) + 0.91916239, sample["preference_ranking"][0][1], sample["preference_ranking"][0][2])
     print("Last Action: ", sample["last_action"][0][0])
     print("Last Action: ", sample["last_action"][0][1])
 
     # ---- Display the Images ----
-    images = sample["images"]  # Shape: [#Cameras, 3, H, W]
+    images = sample["images"][0]  # Shape: [#Cameras, 3, H, W]
     num_cameras = images.shape[0]
     print("No. Cameras:", num_cameras)
 
@@ -129,7 +135,7 @@ for i in range(n):
             axs[0].axis("off")
             axs[0].set_title(camera_labels[0])
     
-    fig.suptitle(f"Sample {i+1}/{n}", fontsize=14)
+    fig.suptitle(f"Sample x/{n}", fontsize=14)
     plt.tight_layout()
     fig.canvas.draw_idle()
 

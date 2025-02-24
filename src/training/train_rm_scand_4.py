@@ -29,6 +29,8 @@ checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkp
 load_files = True
 BATCH_SIZE = 256 
 LEARNING_RATE = 5e-4
+BATCH_SIZE = 48 
+LEARNING_RATE = 3e-4
 NUM_QUERIES = 8
 HIDDEN_DIM = 768
 N_EPOCHS = 200
@@ -45,6 +47,7 @@ print(f"Using device: {device}")
 
 # Load Dataset and Split
 train_dataset = SCANDPreferenceDataset3(train_h5_path)
+val_dataset = SCANDPreferenceDataset3(val_h5_path)
 val_dataset = SCANDPreferenceDataset3(val_h5_path)
 
 train_sampler = WeightedRandomSampler(weights=train_dataset.sample_weights, num_samples=len(train_dataset), replacement=True)
