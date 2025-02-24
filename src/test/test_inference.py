@@ -4,6 +4,7 @@ import time
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.reward_model_scand import RewardModelSCAND
+from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 from data.scand_pref_dataset import SCANDPreferenceDataset
 from utils.reward_model_scand_3 import RewardModelSCAND3
 import torch
@@ -18,8 +19,8 @@ print("Using device:", device)
 
 # h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data.h5"
 h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data_train.h5"
-# model_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints/model_3_epoch_30.pth"
-model_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints/Feb20_home/SCAND_test_epoch50.pth"
+model_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints/model_3_epoch_70.pth"
+# model_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints/Feb20_home/SCAND_test_epoch50.pth"
 config_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints/Feb20_home/config.yaml"
 
 partial_load = False
@@ -28,14 +29,14 @@ partial_load = False
 def load_reward_model(config_path, model_path):
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
-    reward_model = RewardModelSCAND(num_queries=config['num_queries'],
-                             num_heads=config['num_heads'],
-                             num_attn_stacks=config['addon_attn_stacks'],
-                             activation=config['activation_type'],
-                             # dropout=config['dropout_rate']['value'],
-                             ).to(device)
+    # reward_model = RewardModelSCAND(num_queries=config['num_queries'],
+    #                          num_heads=config['num_heads'],
+    #                          num_attn_stacks=config['addon_attn_stacks'],
+    #                          activation=config['activation_type'],
+    #                          # dropout=config['dropout_rate']['value'],
+    #                          ).to(device)
     # original model used by gershom
-    # reward_model = RewardModelSCAND3(num_queries=config['num_queries']).to(device)
+    reward_model = RewardModelSCAND3().to(device)
     model_optimizer = optim.AdamW(reward_model.parameters(), lr=config['learning_rate'], weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(model_optimizer, T_0=10, T_mult=2, eta_min=1e-6)
     if partial_load:
@@ -56,7 +57,7 @@ def load_reward_model(config_path, model_path):
 
     else:
         checkpoint = torch.load(model_path, weights_only=True)
-        reward_model.load_state_dict(checkpoint['model_state_dict'])
+        reward_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         epoch = checkpoint['epoch']
         train_loss = checkpoint['train_loss']
     print(f"Loaded checkpoint from {model_path} at epoch {epoch}")
@@ -66,7 +67,8 @@ def load_reward_model(config_path, model_path):
 
 model, _ = load_reward_model(config_path, model_path)
 
-scand_dataset = SCANDPreferenceDataset(h5_file)
+# scand_dataset = SCANDPreferenceDataset(h5_file)
+scand_dataset = SCANDPreferenceDataset3(h5_file)
 
 # Wrap in DataLoader
 batch_size = 4
@@ -83,7 +85,9 @@ for batch in dataloader:
     past_action = batch["last_action"].to(device)  # Shape: (batch_size, 25, 2)
     current_action = batch["preference_ranking"].to(device)  # Shape: (batch_size, 25, 2)
     scores = batch["preference_scores"].to(device)  # Shape: (batch_size, 25, 2)
-    perms = batch["pref_idx"].to(device)
+    perms = batch["pref_idx"].to(device)  # Shape: (batch_size, 25, 2)
+    print(perms.shape)
+    print(perms)
 
     # Forward pass
     t1 = time.time()

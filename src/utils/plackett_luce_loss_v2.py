@@ -1,6 +1,6 @@
 import torch
 
-class PL_Loss_v2(torch.nn.Module):
+class PL_Loss(torch.nn.Module):
     def forward(self, rewards, pref_idx):
         """
         Args:

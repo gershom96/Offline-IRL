@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 
 from utils.reward_model_scand_3 import RewardModelSCAND3
-from utils.plackett_luce_loss_v2 import PL_Loss_v2 as PL_Loss_v2
+from utils.plackett_luce_loss_v2 import PL_Loss as PL_Loss_v2
 
 """
 THIS IS VERSION 4 from Gershom's code
@@ -29,9 +29,9 @@ train_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_group
 val_h5_path = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_test.h5"
 
 checkpoint_dir = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints"
-load_files = False
-BATCH_SIZE = 32 
-LEARNING_RATE = 3e-4
+load_files = True
+BATCH_SIZE = 256
+LEARNING_RATE = 5e-4
 NUM_QUERIES = 8
 HIDDEN_DIM = 768
 N_EPOCHS = 200
@@ -48,7 +48,7 @@ print(f"Using device: {device}")
 
 # Load Dataset and Split
 train_dataset = SCANDPreferenceDataset3(train_h5_path)
-val_dataset = SCANDPreferenceDataset3(train_h5_path)
+val_dataset = SCANDPreferenceDataset3(val_h5_path)
 
 train_sampler = WeightedRandomSampler(weights=train_dataset.sample_weights, num_samples=len(train_dataset), replacement=True)
 val_sampler = WeightedRandomSampler(weights=val_dataset.sample_weights, num_samples=len(val_dataset), replacement=True)
@@ -95,7 +95,7 @@ writer.add_text(
 model = RewardModelSCAND3(num_queries=NUM_QUERIES).to(device)
 criterion = PL_Loss_v2()
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
+scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5, T_mult=1, eta_min=5e-7)
 # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
 # Load from latest checkpoint (if available)

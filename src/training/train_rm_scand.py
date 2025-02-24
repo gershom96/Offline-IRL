@@ -22,8 +22,8 @@ import numpy as np
 project_name = "Offline-IRL"
 exp_name = "SCAND_test"
 # train_h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data_train.h5"
-train_h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data_train.h5"
-test_h5_file = "/media/jim/7C846B9E846B5A22/scand_data/rosbags/scand_preference_data_train.h5"
+train_h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data_train.h5"
+test_h5_file = "/media/jim/Hard Disk/scand_data/rosbags/scand_preference_data_test.h5"
 checkpoint_dir = "/home/jim/Documents/Projects/Offline-IRL/src/training/checkpoints"
 latest_checkpoint_path = "/home/jim/Documents/Projects/Offline-IRL/src/training/runs/SCAND_test__2025-02-17 22:50:53/SCAND_test_epoch50.pth"
 # h5_file = "/fs/nexus-scratch/gershom/IROS25/Datasets/scand_preference_data.h5"
@@ -44,9 +44,9 @@ gradient_log_freq = 100
 save_model_freq = 5
 notes = "jim-desktop put back the permutation in val set"
 # notes = "gammawks03"
-use_wandb = True
-save_model = True
-save_model_summary = True
+use_wandb = False
+save_model = False
+save_model_summary = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cpu")
 print(f"Using device: {device}")
