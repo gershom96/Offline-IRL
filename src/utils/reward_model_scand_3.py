@@ -110,8 +110,10 @@ class RewardModelSCAND3(nn.Module):
 
     def _initialize_weights(self):
         """Initializes weights using Xavier uniform distribution."""
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
+        for name, module in self.named_modules():
+            if "vision_model" in name:  
+                continue  
+            elif isinstance(module, nn.Linear):
                 nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)  # Zero-bias initialization
