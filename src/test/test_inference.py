@@ -17,7 +17,7 @@ from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
-checkpoint_path = "/media/gershom/Media/Datasets/SCAND/model_3_epoch_70.pth"  
+checkpoint_path = "/media/gershom/Media/Datasets/SCAND/model_3_epoch_30.pth"  
 model = RewardModelSCAND3().to(device)
 
 # Load checkpoint
