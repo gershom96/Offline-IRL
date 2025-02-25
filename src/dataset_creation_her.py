@@ -21,7 +21,7 @@ def normalize_angle(angle):
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
 class SCANDRLProcessor:
-    def __init__(self, output_h5_path_expert, output_h5_path_other, reward_model_path, v_max=2, w_max=1.5, d_v_max=0.05, d_w_max=0.03, n_v=5, n_w=5, scand_stats_path = '../scand_data_stats.json'):
+    def __init__(self, output_h5_path_expert, v_max=2, w_max=1.5, d_v_max=0.05, d_w_max=0.03, n_v=5, n_w=5, scand_stats_path = '../scand_data_stats.json'):
         
         self.scand_stats_path = scand_stats_path
 
@@ -46,7 +46,6 @@ class SCANDRLProcessor:
         self.tau_2 = 1
 
         self.output_h5_path_expert = output_h5_path_expert
-        self.output_h5_path_other = output_h5_path_other
         self.verbose = False
         self.outlier_window = 40
         self.transform = False
@@ -58,18 +57,6 @@ class SCANDRLProcessor:
             with h5py.File(output_h5_path_expert, "w") as f:
                 pass
                 
-        if not os.path.exists(output_h5_path_other):
-            with h5py.File(output_h5_path_other, "w") as f:
-                pass
-        
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.reward_model = RewardModelSCAND3()
-
-        checkpoint = torch.load(reward_model_path, map_location=self.device)
-        self.reward_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-
-        self.reward_model.to(self.device)
-        self.reward_model.eval()
 
         self.means = {
             "goal_distance": 25.00290765,
@@ -89,73 +76,31 @@ class SCANDRLProcessor:
             "preference_ranking": np.array([np.sqrt(0.0785323071548214), np.sqrt(0.022286368831911443)])  # (2,)
         }
 
-        # **DINOv2 Transformations (Resize + Normalize)**
-        self.dino_transform = transforms.Compose([
-            transforms.Lambda(lambda img: transforms.CenterCrop(min(img.size))(img)),
-            transforms.Resize((224, 224)),  # Ensure images are resized properly
-            transforms.ToTensor(),          # Convert image to tensor
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # DINOv2 normalization
-        ])
-
-
     def standardize(self, data, key):
         """Standardizes numerical values using precomputed mean and std."""
-        return (data - self.means[key]) / (self.stds[key] + 1e-8)  # Avoid division by zero
-
-    def load_image(self, image_data):
-        """Loads image from HDF5 dataset."""
-        if isinstance(image_data, np.ndarray):
-            image_bytes = image_data.tobytes()
-        elif isinstance(image_data, (bytes, bytearray)):
-            image_bytes = bytes(image_data)
+        if(key == "diff_action"):
+            return (data - self.means["preference_ranking"] + self.means["last_action"])/np.sqrt( self.stds["preference_ranking"]**2 + self.stds["last_action"]**2+ 1e-8)
         else:
-            raise ValueError("Unsupported type for image_data: {}".format(type(image_data)))
-
-        stream = BytesIO(image_bytes)
-        image = Image.open(stream).convert("RGB")  # Decode the image and ensure 3 channels.
-
-        if self.transform:
-            image = self.transform(image)
-        else:
-            image = self.dino_transform(image)
-
-        return image
+            return (data - self.means[key]) / (self.stds[key] + 1e-8)  # Avoid division by zero
     
-    def extract_rewards(self, goal_distance, heading_error, velocity, omega, last_action, current_action, image):
+    def extract_rewards(self, goal_distance, heading_error, velocity, omega, last_action, expert_action, lidarscan):
         
         goal_distance = self.standardize(goal_distance, "goal_distance")
         heading_error = self.standardize(heading_error, "heading_error")
         velocity = self.standardize(velocity, "velocity")
         omega = self.standardize(omega, "omega")
+
+        diff_action = self.standardize(expert_action-last_action, "diff_action")
+
         last_action = self.standardize(last_action, "last_action")
 
-        goal_distance = np.tile(goal_distance, (25, 1))  
-        heading_error = np.tile(heading_error, (25, 1))  
-        velocity = np.tile(velocity, (25, 1))  
-        omega = np.tile(omega, (25, 1))  
-        last_action = np.tile(last_action, (25, 1))
+        expert_action = self.standardize(expert_action, "preference_ranking")  
 
-        current_action = self.standardize(current_action, "preference_ranking")  
-        image = np.array(self.load_image(image))
-        
-        goal_distance = torch.from_numpy(np.array(goal_distance, dtype=np.float32)).to(self.device)
-        heading_error = torch.from_numpy(np.array(heading_error, dtype=np.float32)).to(self.device)
-        velocity = torch.from_numpy(np.array(velocity, dtype=np.float32)).to(self.device)
-        omega = torch.from_numpy(np.array(omega, dtype=np.float32)).to(self.device)
-        last_action = torch.from_numpy(np.array(last_action, dtype=np.float32)).to(self.device)
-        current_action = torch.from_numpy(np.array(current_action, dtype=np.float32)).to(self.device)
-        image = torch.from_numpy(np.array(image, dtype=np.float32)).unsqueeze(0).to(self.device)
+        reward = -5* np.log(np.exp(goal_distance)+1) - heading_error**2 - np.sum(diff_action**2) - 2*np.exp(min(lidarscan)/6.0)
 
-        # print(goal_distance.shape)
-        
-        with torch.no_grad():
-
-            rewards = self.reward_model(image, goal_distance, heading_error, velocity, omega, last_action, current_action, 1)
-
-        # print(current_action)
-        # print(rewards)
-        # raise Exception
-        return rewards   
+        if(np.isnan(reward)):
+            raise Exception
+        return reward   
     
     def create_action_space(self, last_action, expert_action, discretize = True):
 
@@ -261,7 +206,7 @@ class SCANDRLProcessor:
         return range_dict
     
     def process_file(self, h5_filepath, scene, outlier_dict):
-        with h5py.File(h5_filepath, "r") as h5file, h5py.File(self.output_h5_path_expert, "a") as output_h5_expert, h5py.File(self.output_h5_path_other, "a") as output_h5_other:
+        with h5py.File(h5_filepath, "r") as h5file, h5py.File(self.output_h5_path_expert, "a") as output_h5_expert:
 
             positions = h5file["pos"][:]
             orientations = h5file["heading"][:]
@@ -298,7 +243,6 @@ class SCANDRLProcessor:
                 # print(group, group in output_h5)
                 if group not in output_h5_expert:
                     output_h5_expert.create_group(group)
-                    output_h5_other.create_group(group)
 
                     expert_datasets = {
                         key: self.create_or_get_dataset(
@@ -308,16 +252,6 @@ class SCANDRLProcessor:
                             dtype=h5file[value].dtype
                         )
                         for key, value in {"image_t":"image", "image_next":"image"}.items()
-                    }
-
-                    other_datasets = {
-                        key: self.create_or_get_dataset(
-                            output_h5_other[group],
-                            key,
-                            (0,) + h5file[key].shape[1:],
-                            dtype=h5file[key].dtype
-                        )
-                        for key in ["image"]
                     }
 
             for i in range(n_samples - 2 ): # Avoid last two samples as the next state will not have any 
@@ -332,30 +266,17 @@ class SCANDRLProcessor:
                 L_v, L_w, expert_v_idx, expert_w_idx = self.create_action_space(self.last_action, expert_action)
 
                 expert_action = np.array([L_v[expert_v_idx], L_w[expert_w_idx]])
-                other_actions = []
-                all_actions = [expert_action]
-                for v_idx in range(len(L_v)):
-                    for w_idx in range(len(L_w)):
 
-                        if(v_idx == expert_v_idx and w_idx == expert_w_idx):
-                            continue
-                        else:
-                            action = [L_v[v_idx], L_w[w_idx]]           # Action as (velocity, omega)
-                            other_actions.append(action)     
-                            all_actions.append(action)
-
-                other_actions = np.array(other_actions)
-                all_actions = np.array(all_actions)
 
                 if(self.verbose):
                     print(f"Sample: {i} Last_action: {self.last_action} Expert_action: {expert_action} Goal Index: {goal_idx}")
-                    print(other_actions)
+                    print(expert_action)
 
                 group, v_w_outlier_idx, v_outlier_idx, w_outlier_idx, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom = self.get_group(i, outlier_dict, v_w_top, v_w_bottom, 
                                                                                                                                                 v_top, v_bottom, w_top, w_bottom, 
                                                                                                                                                 n_v_w_seg, n_v_seg, n_w_seg,
                                                                                                                                                 v_w_outlier_idx, v_outlier_idx, w_outlier_idx)
-                
+
                 v_t = h5file["v"][i][0]
                 w_t = h5file["omega"][i][0]
 
@@ -365,9 +286,10 @@ class SCANDRLProcessor:
                 image_t = h5file["image"][i]
                 image_next = h5file["image"][i+1]
 
-                rewards = self.extract_rewards(goal_distance, heading_error, v_t, w_t, self.last_action, all_actions, image_t)
-                rewards = np.array(rewards.cpu())
+                lidarscan = h5file["scan"][i]
 
+                reward = self.extract_rewards(goal_distance, heading_error, v_t, w_t, self.last_action, expert_action, lidarscan)
+                # print(f"Goal distance: {goal_distance}, Heading Error: {heading_error}, Min obst: {min(lidarscan)}, Reward: {reward}")
                 v_t = h5file["v"][i][0]
                 w_t = h5file["omega"][i][0]
 
@@ -380,38 +302,19 @@ class SCANDRLProcessor:
                 self.append_to_group_dataset(output_h5_expert[group], "w_t", w_t, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "action", expert_action, (0, 2))
                 self.append_to_group_dataset(output_h5_expert[group], "last_action", self.last_action, (0, 2))
-                self.append_to_group_dataset(output_h5_expert[group], "reward", rewards[0][0], (0, 1))
+                self.append_to_group_dataset(output_h5_expert[group], "reward", reward, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "image_next", image_next, (0,) + image_next.shape)
                 self.append_to_group_dataset(output_h5_expert[group], "goal_distance_next", next_state_goal_d, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "heading_error_next", next_state_heading_e, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "v_t_next", v_next, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "w_t_next", w_next, (0, 1))
 
-                other_rewards = rewards[0][1:]
-
-                image_idx = len(output_h5_other[group]["image"])  # Get the index for this pair
-
-
-                self.append_to_group_dataset(output_h5_other[group], "image", image_t, (0,) + image_t.shape)
-                self.append_to_group_dataset(output_h5_other[group], "image", image_next, (0,) + image_next.shape)
-
-                for j in range(24):
-                    self.append_to_group_dataset(output_h5_other[group], "image_t_index", np.array([image_idx]), (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "goal_distance_t", goal_distance, (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "heading_error_t", heading_error, (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "v_t", v_t, (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "w_t", w_t, (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "action", other_actions[j], (0, 2))
-                    self.append_to_group_dataset(output_h5_other[group], "last_action", self.last_action, (0, 2))
-                    self.append_to_group_dataset(output_h5_other[group], "reward", other_rewards[j], (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "image_next_index", np.array([image_idx+1]), (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "goal_distance_next", next_state_goal_d, (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "heading_error_next", next_state_heading_e, (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "v_t_next", v_next, (0, 1))
-                    self.append_to_group_dataset(output_h5_other[group], "w_t_next", w_next, (0, 1))
+                
 
                 self.last_action = np.array(expert_action)
-                                                                                       
+
+            print(n_samples, output_h5_expert["0"]["image_t"].shape[0], output_h5_expert["1"]["image_t"].shape[0], output_h5_expert["2"]["image_t"].shape[0],output_h5_expert["3"]["image_t"].shape[0])                                                                  
+    
     def get_group(self, i, outlier_dict, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom, n_v_w_seg, n_v_seg, n_w_seg, v_w_outlier_idx, v_outlier_idx, w_outlier_idx):
         # print(i, outlier_dict, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom, n_v_w_seg, n_v_seg, n_w_seg, v_w_outlier_idx, v_outlier_idx, w_outlier_idx)
         if(v_w_top):
@@ -580,26 +483,28 @@ class SCANDRLProcessor:
         dataset[-1] = data
 
 # Example Usage
-h5_dir = "/media/gershom/Media/Datasets/SCAND/Annotated"
-output_h5_path_expert = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_expert.h5"
-output_h5_path_other = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_other.h5"
-reward_model_path = "/media/gershom/Media/Datasets/SCAND/model_3_epoch_70.pth"
+h5_dir = "/media/gershom/Media/Datasets/SCAND/Comparisons/H5/"
+output_h5_path_expert = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_expert_her_test.h5"
+
 scand_stats_path = "/home/gershom/Documents/GAMMA/IROS25/Repos/Offline-IRL/src/data_stats.json"
-# completed = ["A_Spot_Bass_Rec_Fri_Nov_26_126_annotated.h5", "A_Spot_Library_Fountain_Tue_Nov_9_35_annotated.h5", "A_Spot_Union_Union_Wed_Nov_10_67_annotated.h5",
-#             "A_Spot_Union_Library_Tue_Nov_9_37_annotated.h5", "A_Spot_Stadium_PerformingArtsCenter_Sat_Nov_13_106_annotated.h5", "A_Spot_AHG_Library_Mon_Nov_8_24_annotated.h5",
-#             "A_Spot_Ballstructure_UTTower_Wed_Nov_10_60_annotated.h5", "A_Spot_AHG_Library_Fri_Nov_5_21_annotated.h5", "A_Spot_Thompson_Butler_Sat_Nov_13_103_annotated.h5", 
-#             "C_Spot_Speedway_Butler_Fri_Nov_26_131_annotated.h5", "A_Spot_AHG_GDC_Tue_Nov_9_41_annotated.h5", "D_Spot_PerformingArts_Lbj_Sat_Nov_13_98_annotated.h5",
-#             "A_Spot_NHB_Ahg_Wed_Nov_10_55_annotated.h5", "A_Spot_Library_MLK_Thu_Nov_18_122_annotated.h5", "A_Spot_Library_MLK_Thu_Nov_18_123_annotated.h5",
-#             "C_Spot_SanJac_Bass_Fri_Nov_26_125_annotated.h5", "B_Spot_AHG_Union_Mon_Nov_15_111_annotated.h5", "A_Spot_NHB_Jester_Wed_Nov_10_62_annotated.h5",
-#             "A_Spot_UTTower_Union_Wed_Nov_10_61_annotated.h5", "A_Spot_Welch_Union_Thu_Nov_11_71_annotated.h5", "A_Spot_Ahg_EERC_Thu_Nov_11_79_annotated.h5",
-#             "A_Spot_Fountain_Dobie_Fri_Nov_12_83_annotated.h5", "A_Spot_AHG_Cola_Sat_Nov_13_96_annotated.h5", "A_Spot_Security_NHB_Wed_Nov_10_54_annotated.h5",
-#             "B_Spot_AHG_Library_Tue_Nov_9_34_annotated.h5", "A_Spot_Parlin_Parlin_Wed_Nov_10_51_annotated.h5", "C_Spot_Tent_AHG_Fri_Nov_26_130_annotated.h5",
-#             "A_Spot_Library_Fountain_Mon_Nov_8_30_annotated.h5", "C_Spot_Rec_Tent_Fri_Nov_26_129_annotated.h5", "A_Spot_Ahg_Library_Wed_Nov_10_56_annotated.h5",
-#             "A_Spot_AHG_Library_Wed_Nov_10_46_annotated.h5", "A_Jackal_Speedway_Speedway_Fri_Oct_29_12_annotated.h5"]
 
-completed = []
+completed = [
+    # 'A_Spot_Security_NHB_Wed_Nov_10_54_w_laserscan.h5', 'C_Spot_Tent_AHG_Fri_Nov_26_130_w_laserscan.h5', 'B_Spot_AHG_Library_Mon_Nov_15_107_w_laserscan.h5', 
+    # 'A_Spot_Ahg_Library_Wed_Nov_10_56_w_laserscan.h5', 'C_Spot_Rec_Tent_Fri_Nov_26_129_w_laserscan.h5', 'A_Spot_NHB_Ahg_Wed_Nov_10_55_w_laserscan.h5', 
+    # 'D_Spot_PerformingArts_Lbj_Sat_Nov_13_98_w_laserscan.h5', 'A_Spot_Ahg_EERC_Thu_Nov_11_79_w_laserscan.h5', 'A_Spot_AHG_AHG_Mon_Nov_8_27_w_laserscan.h5', 
+    'A_Spot_Union_Union_Wed_Nov_10_53_w_laserscan.h5', 'A_Spot_Union_Union_Wed_Nov_10_67_w_laserscan.h5', 'A_Spot_SAC_GeorgeWashStatue_Wed_Nov_10_50_w_laserscan.h5', 
+    'C_Spot_Speedway_Butler_Fri_Nov_26_131_w_laserscan.h5', 'A_Spot_Ballstructure_UTTower_Wed_Nov_10_60_w_laserscan.h5', 'A_Spot_Library_Fountain_Mon_Nov_8_30_w_laserscan.h5', 
+    'C_Spot_SanJac_Bass_Fri_Nov_26_125_w_laserscan.h5', 'A_Spot_Library_Fountain_Tue_Nov_9_35_w_laserscan.h5', 'A_Spot_AHG_Library_Fri_Nov_12_81_w_laserscan.h5', 
+    'A_Spot_Parlin_Parlin_Wed_Nov_10_51_w_laserscan.h5', 'B_Spot_AHG_Union_Mon_Nov_15_111_w_laserscan.h5', 'A_Spot_Library_MLK_Thu_Nov_18_123_w_laserscan.h5', 
+    'A_Jackal_Speedway_Speedway_Fri_Oct_29_12_w_laserscan.h5', 'A_Spot_AHG_Library_Mon_Nov_8_24_w_laserscan.h5', 'A_Spot_NHB_Jester_Wed_Nov_10_62_w_laserscan.h5', 
+    'A_Spot_Library_MLK_Thu_Nov_18_122_w_laserscan.h5', 'A_Spot_Stadium_PerformingArtsCenter_Sat_Nov_13_106_w_laserscan.h5', 'A_Spot_Union_Library_Tue_Nov_9_37_w_laserscan.h5', 
+    'A_Spot_AHG_Library_Fri_Nov_5_21_w_laserscan.h5', 'A_Spot_AHG_Cola_Sat_Nov_13_96_w_laserscan.h5', 'A_Spot_Fountain_Dobie_Fri_Nov_12_83_w_laserscan.h5', 
+    'A_Spot_Welch_Union_Thu_Nov_11_71_w_laserscan.h5', 'A_Spot_Bass_Rec_Fri_Nov_26_126_w_laserscan.h5', 'A_Spot_AHG_Library_Wed_Nov_10_46_w_laserscan.h5', 
+    'A_Spot_AHG_GDC_Tue_Nov_9_41_w_laserscan.h5', 'B_Spot_AHG_Library_Tue_Nov_9_34_w_laserscan.h5', 'A_Spot_UTTower_Union_Wed_Nov_10_61_w_laserscan.h5', 
+    'A_Spot_Thompson_Butler_Sat_Nov_13_103_w_laserscan.h5']
 
-processor = SCANDRLProcessor(output_h5_path_expert, output_h5_path_other, reward_model_path, scand_stats_path = scand_stats_path)
+
+processor = SCANDRLProcessor(output_h5_path_expert, scand_stats_path = scand_stats_path)
 
 for filename in os.listdir(h5_dir):
     # print(filexit()ename)
@@ -609,7 +514,7 @@ for filename in os.listdir(h5_dir):
 
         scene_name = "_".join(filename.split("_")[1:4])
         outlier_dict = processor.get_outliers(os.path.join(h5_dir, filename), scene_name)
-        print(outlier_dict)
+        # print(outlier_dict)
         processor.process_file(os.path.join(h5_dir, filename), scene_name, outlier_dict)    
 
         # raise Exception

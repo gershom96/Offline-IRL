@@ -69,8 +69,8 @@ def check_dataset_consistency(h5_path, check_images=True, num_samples=5):
                         img_idx_next = h5file[group]["image_next_index"][idx][0]
 
                         # Retrieve from /images dataset
-                        img_t = h5file["images"][img_idx_t]
-                        img_next = h5file["images"][img_idx_next]
+                        img_t = h5file[group]["image"][img_idx_t]
+                        img_next = h5file[group]["image"][img_idx_next]
                 else:
                     print(" No images found in this group.")
                     continue
@@ -105,4 +105,5 @@ def check_dataset_consistency(h5_path, check_images=True, num_samples=5):
                 axes[1].set_title(f"Image @ t+1 (idx {idx})")
                 plt.show()
 # Run tests for both datasets
-check_dataset_consistency(output_h5_path_expert, check_images=True)
+# check_dataset_consistency(output_h5_path_expert, check_images=True)
+check_dataset_consistency(output_h5_path_other, check_images=True)
