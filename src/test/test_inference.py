@@ -114,7 +114,9 @@ for batch in dataloader:
         current_action[..., 1] = (current_action[..., 1] - w_mean) / w_std  # Normalize omega
 
         t1 = time.time()
-        reward = model(image, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
+
+        with torch.no_grad():
+            reward = model(image, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
         t2 = time.time()
 
         reward = reward.cpu()

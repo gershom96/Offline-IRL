@@ -364,7 +364,8 @@ class SCANDRLProcessor:
                 image_t = h5file["image"][i]
                 image_next = h5file["image"][i+1]
 
-                rewards = self.extract_rewards(goal_distance, heading_error, v_t, w_t, self.last_action, all_actions, image_t)
+                with torch.no_grad():
+                    rewards = self.extract_rewards(goal_distance, heading_error, v_t, w_t, self.last_action, all_actions, image_t)
                 rewards = np.array(rewards.cpu())
 
                 v_t = h5file["v"][i][0]
