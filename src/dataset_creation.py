@@ -147,8 +147,9 @@ class SCANDRLProcessor:
         image = torch.from_numpy(np.array(image, dtype=np.float32)).unsqueeze(0).to(self.device)
 
         # print(goal_distance.shape)
+        with torch.no_grad():
 
-        rewards = self.reward_model(image, goal_distance, heading_error, velocity, omega, last_action, current_action, 1)
+            rewards = self.reward_model(image, goal_distance, heading_error, velocity, omega, last_action, current_action, 1)
 
         # print(current_action)
         # print(rewards)
@@ -296,7 +297,28 @@ class SCANDRLProcessor:
                 # print(group, group in output_h5)
                 if group not in output_h5_expert:
                     output_h5_expert.create_group(group)
-                    
+                    output_h5_other.create_group(group)
+
+                    expert_datasets = {
+                        key: self.create_or_get_dataset(
+                            output_h5_expert[group],
+                            key,
+                            (0,) + h5file[value].shape[1:],
+                            dtype=h5file[value].dtype
+                        )
+                        for key, value in {"image_t":"image", "image_next":"image"}.items()
+                    }
+
+                    other_datasets = {
+                        key: self.create_or_get_dataset(
+                            output_h5_other[group],
+                            key,
+                            (0,) + h5file[key].shape[1:],
+                            dtype=h5file[key].dtype
+                        )
+                        for key in ["image"]
+                    }
+
             for i in range(n_samples - 2 ): # Avoid last two samples as the next state will not have any 
 
                 goal_distance, heading_error, goal_idx = self.calculate_goal_features(i, positions, orientations)
@@ -333,56 +355,61 @@ class SCANDRLProcessor:
                                                                                                                                                 n_v_w_seg, n_v_seg, n_w_seg,
                                                                                                                                                 v_w_outlier_idx, v_outlier_idx, w_outlier_idx)
                 
-                rewards = self.extract_rewards(goal_distance, heading_error, h5file["v"][i][0], h5file["omega"][i][0], self.last_action, all_actions, h5file["image"][i])
-                rewards = np.array(rewards)
-
                 v_t = h5file["v"][i][0]
                 w_t = h5file["omega"][i][0]
 
                 v_next = h5file["v"][i+1][0]
                 w_next = h5file["omega"][i+1][0]
 
+                image_t = h5file["image"][i]
+                image_next = h5file["image"][i+1]
+
+                rewards = self.extract_rewards(goal_distance, heading_error, v_t, w_t, self.last_action, all_actions, image_t)
+                rewards = np.array(rewards.cpu())
+
+                v_t = h5file["v"][i][0]
+                w_t = h5file["omega"][i][0]
+
                 # Append data to the selected group
 
+                self.append_to_group_dataset(output_h5_expert[group], "image_t", image_t, (0,) + image_t.shape)
                 self.append_to_group_dataset(output_h5_expert[group], "goal_distance_t", goal_distance, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "heading_error_t", heading_error, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "v_t", v_t, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "w_t", w_t, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "action", expert_action, (0, 2))
-                self.append_to_group_dataset(output_h5_expert[group], "last_action", np.array(self.last_action), (0, 2))
-                self.append_to_group_dataset(output_h5_expert[group], "reward", rewards[0], (0, 1))
+                self.append_to_group_dataset(output_h5_expert[group], "last_action", self.last_action, (0, 2))
+                self.append_to_group_dataset(output_h5_expert[group], "reward", rewards[0][0], (0, 1))
+                self.append_to_group_dataset(output_h5_expert[group], "image_next", image_next, (0,) + image_next.shape)
                 self.append_to_group_dataset(output_h5_expert[group], "goal_distance_next", next_state_goal_d, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "heading_error_next", next_state_heading_e, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "v_t_next", v_next, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "w_t_next", w_next, (0, 1))
 
-                # Expand state variables to match batch size (24 actions)
-                other_rewards = rewards[1:]
-                batch_goal_distance = np.tile(goal_distance, (24, 1))
-                batch_heading_error = np.tile(heading_error, (24, 1))
-                batch_v_t = np.tile(v_t, (24, 1))
-                batch_w_t = np.tile(w_t, (24, 1))
-                batch_last_action = np.tile(self.last_action, (24, 1))
-                batch_goal_distance_next = np.tile(next_state_goal_d, (24, 1))
-                batch_heading_error_next = np.tile(next_state_heading_e, (24, 1))
-                batch_v_t_next = np.tile(v_next, (24, 1))
-                batch_w_t_next = np.tile(w_next, (24, 1))
+                other_rewards = rewards[0][1:]
 
-                # Append all at once
-                self.append_to_group_dataset(output_h5_other[group], "goal_distance_t", batch_goal_distance, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "heading_error_t", batch_heading_error, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "v_t", batch_v_t, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "w_t", batch_w_t, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "action", other_actions, (0, 2))
-                self.append_to_group_dataset(output_h5_other[group], "last_action", batch_last_action, (0, 2))
-                self.append_to_group_dataset(output_h5_other[group], "reward", other_rewards, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "goal_distance_next", batch_goal_distance_next, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "heading_error_next", batch_heading_error_next, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "v_t_next", batch_v_t_next, (0, 1))
-                self.append_to_group_dataset(output_h5_other[group], "w_t_next", batch_w_t_next, (0, 1))
+                image_idx = len(output_h5_other[group]["image"])  # Get the index for this pair
 
-                # print(pref_data_count)
-                self.last_action = expert_action
+
+                self.append_to_group_dataset(output_h5_other[group], "image", image_t, (0,) + image_t.shape)
+                self.append_to_group_dataset(output_h5_other[group], "image", image_next, (0,) + image_next.shape)
+
+                for j in range(24):
+                    self.append_to_group_dataset(output_h5_other[group], "image_t_index", np.array([image_idx]), (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "goal_distance_t", goal_distance, (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "heading_error_t", heading_error, (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "v_t", v_t, (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "w_t", w_t, (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "action", other_actions[j], (0, 2))
+                    self.append_to_group_dataset(output_h5_other[group], "last_action", self.last_action, (0, 2))
+                    self.append_to_group_dataset(output_h5_other[group], "reward", other_rewards[j], (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "image_next_index", np.array([image_idx+1]), (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "goal_distance_next", next_state_goal_d, (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "heading_error_next", next_state_heading_e, (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "v_t_next", v_next, (0, 1))
+                    self.append_to_group_dataset(output_h5_other[group], "w_t_next", w_next, (0, 1))
+
+                self.last_action = np.array(expert_action)
                                                                                        
     def get_group(self, i, outlier_dict, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom, n_v_w_seg, n_v_seg, n_w_seg, v_w_outlier_idx, v_outlier_idx, w_outlier_idx):
         # print(i, outlier_dict, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom, n_v_w_seg, n_v_seg, n_w_seg, v_w_outlier_idx, v_outlier_idx, w_outlier_idx)
@@ -554,7 +581,7 @@ class SCANDRLProcessor:
 # Example Usage
 h5_dir = "/media/gershom/Media/Datasets/SCAND/Annotated"
 output_h5_path_expert = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_expert.h5"
-output_h5_path_other = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_expert.h5"
+output_h5_path_other = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_other.h5"
 reward_model_path = "/media/gershom/Media/Datasets/SCAND/model_3_epoch_70.pth"
 scand_stats_path = "/home/gershom/Documents/GAMMA/IROS25/Repos/Offline-IRL/src/data_stats.json"
 # completed = ["A_Spot_Bass_Rec_Fri_Nov_26_126_annotated.h5", "A_Spot_Library_Fountain_Tue_Nov_9_35_annotated.h5", "A_Spot_Union_Union_Wed_Nov_10_67_annotated.h5",
@@ -583,3 +610,5 @@ for filename in os.listdir(h5_dir):
         outlier_dict = processor.get_outliers(os.path.join(h5_dir, filename), scene_name)
         print(outlier_dict)
         processor.process_file(os.path.join(h5_dir, filename), scene_name, outlier_dict)    
+
+        # raise Exception
