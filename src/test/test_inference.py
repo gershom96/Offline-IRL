@@ -28,7 +28,7 @@ model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 model.eval()  # Set model to evaluation mode
 print(f"Model checkpoint loaded from: {checkpoint_path}")
 
-h5_file = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_train.h5"
+h5_file = "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_test.h5"
 scand_dataset = SCANDPreferenceDataset3(h5_file)
 
 
@@ -50,6 +50,12 @@ def create_action_space(v_center, w_center, n_v=5, n_w=5, v_step=0.025, w_step=0
     return v_actions, w_actions
 
 count = 0
+
+v_mean = scand_dataset.means["velocity"]
+v_std = scand_dataset.stds["velocity"]
+w_mean = scand_dataset.means["omega"]
+w_std = scand_dataset.stds["omega"]
+
 for batch in dataloader:
     # Move batch data to device
     image = batch["images"].to(device)  # Shape: (batch_size, 3, 224, 224)
@@ -78,7 +84,11 @@ for batch in dataloader:
     plt.draw()
     plt.pause(0.1)
 
+    past_action[...,0] = past_action[...,0]* v_std + v_mean
+    past_action[...,1] = past_action[...,1]* w_std + w_mean
     while True:
+        
+        print(f"Actual past action: {past_action[0][0]}")
         past_v = float(input("Enter past_v: ").strip())
         past_w = float(input("Enter past_w: ").strip())
 
@@ -95,10 +105,7 @@ for batch in dataloader:
         L_v, L_w = create_action_space(v_center, w_center)
         # print(L_v, L_w)
 
-        v_mean = 0.91916239
-        v_std = np.sqrt(0.63170535)
-        w_mean = -0.00177657
-        w_std = np.sqrt(0.02270943)
+        
         # Combine v and w into a (25, 2) action matrix
         current_action = np.array([[(v, w) for v in L_v for w in L_w]])  # Shape: (25, 2)
         current_action = torch.tensor(current_action, dtype=torch.float32).to(device)
@@ -107,7 +114,9 @@ for batch in dataloader:
         current_action[..., 1] = (current_action[..., 1] - w_mean) / w_std  # Normalize omega
 
         t1 = time.time()
-        reward = model(image, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
+
+        with torch.no_grad():
+            reward = model(image, goal_distance, heading_error, velocity, omega, past_action, current_action, batch_size)
         t2 = time.time()
 
         reward = reward.cpu()
@@ -134,8 +143,8 @@ for batch in dataloader:
 
         print("Sorted Actions:", sorted_actions)
 
-        test_again = bool(input("Dont Test Again? : ").strip())
+        test_again = bool(int(input("Test Again? : ").strip()))
 
-        if(test_again):
+        if(not test_again):
             break
-plt.close()
+    plt.close()
