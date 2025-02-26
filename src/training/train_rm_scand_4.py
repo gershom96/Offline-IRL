@@ -102,7 +102,7 @@ if (load_files):
         checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".pth")]
         if checkpoint_files:
             latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))  # Find latest checkpoint
-            latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_3_epoch_40.pth"
+            latest_checkpoint_path = "/fs/nexus-scratch/gershom/IROS25/Offline-IRL/src/models/checkpoints/model_3_epoch_70.pth"
             checkpoint = torch.load(latest_checkpoint_path, map_location=device)
 
             print(f"\nTotal Layers in Checkpoint: {len(checkpoint['model_state_dict'])}")
