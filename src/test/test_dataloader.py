@@ -3,18 +3,24 @@ import os
 import matplotlib.pyplot as plt
 from PIL import Image
 import torch
+import numpy as np
+
+from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
+
 
 # Add parent directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from data.nuscenes_pref_dataset import NuScenesPreferenceDataset
 from data.scand_pref_dataset import SCANDPreferenceDataset
+from data.scand_pref_dataset_2 import SCANDPreferenceDataset2
+from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
 
 scand = True
 # Paths
 
 if(scand):
-    h5_file = "/media/gershom/Media/Datasets/SCAND/scand_preference_data.h5"
+    h5_file =  "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped.h5"
 else:
     h5_file = "/media/gershom/Media/Datasets/NuScenes/H5/nuscenes_preference_data.h5"
     nuscenes_dataset_path = "/media/gershom/Media/Datasets/NuScenes"
@@ -30,8 +36,11 @@ else:
 
 
 if(scand):
-    dataset = SCANDPreferenceDataset(h5_file, time_window=1)
-    n = len(dataset)
+    dataset = SCANDPreferenceDataset3(h5_file)
+    sampler = WeightedRandomSampler(weights=dataset.sample_weights, num_samples=len(dataset), replacement=True)
+    train_loader = DataLoader(dataset, batch_size=1, num_workers=8, pin_memory=True, sampler = sampler)
+
+    n = dataset.length
     camera_labels = [
             'CAM_FRONT']
 else:
@@ -68,18 +77,20 @@ current_num_cameras = None
 axs = None
 
 # Display Images and Metadata
-for i in range(n):
-    sample = dataset[i]
+for sample in train_loader:
+    
 
-    print(f"Sample : {i}/{n}")
-    # print(sample["goal_distance"].shape)
+    print(f"Sample : {1}/{n}")
+    print(sample["goal_distance"].shape)
     print("Goal Distance:", sample["goal_distance"][0][0])
     print("Heading Error:", sample["heading_error"][0][0])
     print("Velocity:", sample["velocity"][0][0].numpy())
     print("Rotation Rate:", sample["rotation_rate"][0][0].numpy())
     print("Preference Ranking Shape:", sample["preference_ranking"].shape)
-    print("Preference Ranking Top3:", sample["preference_ranking"][0][0], sample["preference_ranking"][0][1], sample["preference_ranking"][0][2])
+    print("Preference Indices Shape:", sample["pref_idx"].shape)
+    print("Preference Ranking Top3:", sample["preference_ranking"][0][0]*np.sqrt(0.63170535) + 0.91916239, sample["preference_ranking"][0][1], sample["preference_ranking"][0][2])
     print("Last Action: ", sample["last_action"][0][0])
+    print("Last Action: ", sample["last_action"][0][1])
 
     # ---- Display the Images ----
     images = sample["images"][0]  # Shape: [#Cameras, 3, H, W]
@@ -100,7 +111,8 @@ for i in range(n):
         current_num_cameras = num_cameras
 
     # Now update the images in the existing axes.
-    for idx, img_tensor in enumerate(images):
+    for idx, img_tensor in enumerate([images]):
+        print(img_tensor.shape)
         img = img_tensor.permute(1, 2, 0).numpy().astype('uint8')  # [H, W, 3]
         if not scand:
             # For nuScenes, use the mapping (if available).
@@ -123,7 +135,7 @@ for i in range(n):
             axs[0].axis("off")
             axs[0].set_title(camera_labels[0])
     
-    fig.suptitle(f"Sample {i+1}/{n}", fontsize=14)
+    fig.suptitle(f"Sample x/{n}", fontsize=14)
     plt.tight_layout()
     fig.canvas.draw_idle()
 

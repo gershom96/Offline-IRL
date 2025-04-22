@@ -63,7 +63,7 @@ class SCANDPreferenceDataset(Dataset):
 
         with h5py.File(self.h5_file_path, "r") as h5_file:
 
-            self.sequence_info = h5_file["0"]["sequence_info"][:]  # (index_within_seq, seq_length)
+            self.sequence_info = h5_file["2"]["sequence_info"][:]  # (index_within_seq, seq_length)
 
             self.groups = list(h5_file.keys())
 

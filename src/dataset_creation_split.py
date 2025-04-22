@@ -608,9 +608,10 @@ train_output_h5_path_expert = "/media/jim/Hard Disk/scand_data/rosbags/scand_rl_
 test_output_h5_path_expert = "/media/jim/Hard Disk/scand_data/rosbags/scand_rl_test_grouped_expert.h5"
 train_output_h5_path_other = "/media/jim/Hard Disk/scand_data/rosbags/scand_rl_train_grouped_other.h5"
 test_output_h5_path_other = "/media/jim/Hard Disk/scand_data/rosbags/scand_rl_test_grouped_other.h5"
+test_train_split_save = "/media/jim/Hard Disk/scand_data/rosbags/rl_train_test_split.json"
 train_processor = SCANDRLProcessor(train_output_h5_path_expert, train_output_h5_path_other, reward_model_path, scand_stats_path = scand_stats_path)
 test_processor = SCANDRLProcessor(test_output_h5_path_expert, test_output_h5_path_other, reward_model_path, scand_stats_path = scand_stats_path)
-
+dataset_split = {"train": [], "test": []}
 for filename in p_bar:
     # print(filexit()ename)
     if filename.endswith(".h5"):
@@ -620,10 +621,14 @@ for filename in p_bar:
         scene_name = "_".join(filename.split("_")[1:4])
         p_bar.set_description(f"processing {filename}")
         if random() < train_test_split:
+            dataset_split['train'].append(filename)
             outlier_dict = train_processor.get_outliers(os.path.join(h5_dir, filename), scene_name)
             train_processor.process_file(os.path.join(h5_dir, filename), scene_name, outlier_dict)
         else:
+            dataset_split['test'].append(filename)
             outlier_dict = test_processor.get_outliers(os.path.join(h5_dir, filename), scene_name)
             test_processor.process_file(os.path.join(h5_dir, filename), scene_name, outlier_dict)
 
-        # raise Exception
+# save the test-train split
+with open(test_train_split_save, "w") as outfile:
+    json.dump(dataset_split, outfile)
