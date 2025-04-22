@@ -9,10 +9,10 @@ import numpy as np
 import os
 from io import BytesIO
 import torchvision.transforms as transforms
+import json
 
-
-class SCANDPreferenceDataset3(Dataset):
-    def __init__(self, h5_file_path:str, mode:int = 1, transform = None):
+class SCANDPreferenceDataset(Dataset):
+    def __init__(self, h5_file_path:str, scand_stats_path = '/home/gershom/Documents/GAMMA/IROS25/Repos/Offline-IRL/src/data_stats.json',transform = None):
         """
         Dataloader for annotated scan-d dataset
         annotated H5 file keys:
@@ -21,12 +21,6 @@ class SCANDPreferenceDataset3(Dataset):
 
         Args:
             h5_file_path (str): Path to the HDF5 dataset.
-            mode (int): Determines which camera views to load.
-                        1 - Front Camera
-                        2 - Front & Back Cameras
-                        3 - Front, Back & Side Cameras
-                        4 - All 6 Cameras
-            time_window (int): Number of sequential timesteps to include if time_series=True.
             transform (callable, optional): Optional transform to be applied on images.
         """
         self.h5_file_path = h5_file_path
@@ -35,52 +29,66 @@ class SCANDPreferenceDataset3(Dataset):
         # **DINOv2 Transformations (Resize + Normalize)**
         self.dino_transform = transforms.Compose([
             transforms.Lambda(lambda img: transforms.CenterCrop(min(img.size))(img)),
-            transforms.Resize((224, 224)),  # Ensure images are resized properly
-            transforms.ToTensor(),          # Convert image to tensor
+            transforms.Resize((224, 224)),  # Input size to DINOv2
+            transforms.ToTensor(),          
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # DINOv2 normalization
         ])
+        self.scand_stats_path = scand_stats_path
 
-        self.means = {
-            "goal_distance": 25.00290765,
-            "heading_error": -0.01144954,
-            "velocity": 1.2836152,
-            "omega": -0.00149038,
-            "last_action": np.array([1.28372591, -0.00149611]),  # (2,)
-            "preference_ranking": np.array([1.2835427186288364, -0.00147476722583554])  # (2,)
-        }
+        with open(self.scand_stats_path, "r") as f:
+            stats = json.load(f)
+            means = stats["means"]
+            stds = stats["stds"]
 
-        self.stds = {
-            "goal_distance": np.sqrt(275.01400778),
-            "heading_error": np.sqrt(0.31931658),
-            "velocity": np.sqrt(0.07844775),
-            "omega": np.sqrt(0.02225859),
-            "last_action": np.array([np.sqrt(0.07829221), np.sqrt(0.02225181)]),  # (2,)
-            "preference_ranking": np.array([np.sqrt(0.0785323071548214), np.sqrt(0.022286368831911443)])  # (2,)
-        }
+            self.means = {
+                "goal_distance": float(means["goal_distance"]),
+                "heading_error": float(means["heading_error"]),
+                "velocity": float(means["velocity"]),
+                "omega": float(means["omega"]),
+                "last_action": np.array(means["last_action"]),  # (2,)
+                "preference_ranking": np.array(means["preference_ranking"])  # (2,)
+            }
+
+            self.stds = {
+                "goal_distance": float(stds["goal_distance"]),
+                "heading_error": float(stds["heading_error"]),
+                "velocity": float(stds["velocity"]),
+                "omega": float(stds["omega"]),
+                "last_action": np.array(stds["last_action"]),  # (2,)
+                "preference_ranking": np.array(stds["preference_ranking"])  # (2,)
+            }
 
         start_idx = 0
         self.group_indices = {}
-        self.indices_to_group = []  # Store the group each index belongs to
+        self.indices_to_group = []
         
         with h5py.File(self.h5_file_path, "r") as h5_file:  
-
-            self.sequence_info = h5_file["0"]["sequence_info"][:]  # (index_within_seq, seq_length)
-
             self.groups = list(h5_file.keys())
+            
+            self.sequence_info = h5_file["2"]["sequence_info"][:]
 
             for group in self.groups:
-                group_size = h5_file[group]["goal_distance"].shape[0]
+                if "image" not in h5_file[group]:  # Ensure "image" dataset exists
+                    print(f"Skipping {group} (missing 'image' dataset)")
+                    continue
+
+                group_size = h5_file[group]["image"].shape[0]  # Get number of samples
+                
+                if group_size == 0:  # Check if the group is empty
+                    print(f"Skipping {group} (empty dataset)")
+                    continue  
+
                 self.group_indices[group] = list(range(start_idx, start_idx + group_size))
-                               
+                            
                 # Assign indices to groups
                 self.indices_to_group.extend([group] * group_size)
                 start_idx += group_size
 
-        self.length = len(self.indices_to_group) # Total dataset size
+        self.length = len(self.indices_to_group)
 
-        # Compute sampling weights
+        # Compute sampling weights only for **non-empty** groups
         self.weights_per_group = {
-            group: self.length / (len(self.groups) * len(self.group_indices[group])) for group in self.groups
+            group: self.length / (len(self.groups) * len(self.group_indices[group])) for group in self.group_indices
         }
 
         # Assign weights for each sample based on its group
@@ -91,7 +99,7 @@ class SCANDPreferenceDataset3(Dataset):
 
     def standardize(self, data, key):
         """Standardizes numerical values using precomputed mean and std."""
-        return (data - self.means[key]) / (self.stds[key] + 1e-8)  # Avoid division by zero
+        return (data - self.means[key]) / (self.stds[key] + 1e-8)
 
     def load_image(self, image_data):
         """Loads image from HDF5 dataset."""
@@ -103,41 +111,26 @@ class SCANDPreferenceDataset3(Dataset):
             raise ValueError("Unsupported type for image_data: {}".format(type(image_data)))
 
         stream = BytesIO(image_bytes)
-        image = Image.open(stream).convert("RGB")  # Decode the image and ensure 3 channels.
+        image = Image.open(stream).convert("RGB")
 
         if self.transform:
             image = self.transform(image)
         else:
             image = self.dino_transform(image)
-            
-            # image = np.array(image, dtype=np.float32)        # Convert to NumPy array
-            # image = np.transpose(image, (2, 0, 1))     # Rearrange dimensions to [C, H, W] using NumPy
 
         return image
-    
-    def get_time_series_indices(self, idx):
-        """Handles time window sampling within sequence boundaries."""
-        seq_idx, seq_len = self.sequence_info[idx]
-        start_idx = max(0, idx - self.time_window + 1)
-        start_idx = max(start_idx, idx - seq_idx)  # Prevent crossing sequence boundary
-
-        indices = list(range(start_idx, idx + 1))
-        while len(indices) < self.time_window:    
-            indices.insert(0, start_idx)
-
-        return indices
 
     def __getitem__(self, idx):
 
         # Data aggregation
         data: dict[str | Any, list[Any] | Tensor] = {
-            "goal_distance": [],
-            "heading_error": [],
+            # "goal_distance": [],
+            # "heading_error": [],
             "velocity": [],
             "rotation_rate": [],
             "preference_ranking": [],
             "images": [],
-            "last_action": [],
+            # "last_action": [],
             "pref_idx": []
         }
 
@@ -146,26 +139,22 @@ class SCANDPreferenceDataset3(Dataset):
         
         with h5py.File(self.h5_file_path, "r", swmr=True) as h5_file:
             # Load shared state variables (Expand them for 25 actions **inside the dataset**)
-            goal_distance = h5_file[group]["goal_distance"][local_idx]  # (1,)
-            heading_error = h5_file[group]["heading_error"][local_idx]  # (1,)
+            # goal_distance = h5_file[group]["goal_distance"][local_idx]  # (1,)
+            # heading_error = h5_file[group]["heading_error"][local_idx]  # (1,)
             velocity = h5_file[group]["v"][local_idx]  # (1,)
             omega = h5_file[group]["omega"][local_idx]  # (1,)
-            last_action = h5_file[group]["last_action"][local_idx]  # (2,)
-            # print(f"Last Action: {last_action}")
-            # Standardize the numerical inputs
-            goal_distance = self.standardize(goal_distance, "goal_distance")
-            heading_error = self.standardize(heading_error, "heading_error")
+            # last_action = h5_file[group]["last_action"][local_idx]  # (2,)
+            # goal_distance = self.standardize(goal_distance, "goal_distance")
+            # heading_error = self.standardize(heading_error, "heading_error")
             velocity = self.standardize(velocity, "velocity")
             omega = self.standardize(omega, "omega")
-            last_action = self.standardize(last_action, "last_action")
+            # last_action = self.standardize(last_action, "last_action")
 
-            #print(f"Last Action: {last_action}")
-            # Expand shared state variables to (25, x)
-            goal_distance = np.tile(goal_distance, (25, 1))  
-            heading_error = np.tile(heading_error, (25, 1))  
+            # goal_distance = np.tile(goal_distance, (25, 1))  
+            # heading_error = np.tile(heading_error, (25, 1))  
             velocity = np.tile(velocity, (25, 1))  
             omega = np.tile(omega, (25, 1))  
-            last_action = np.tile(last_action, (25, 1))  
+            # last_action = np.tile(last_action, (25, 1))  
 
             # Load per-action data
             preference_ranking = h5_file[group]["preference_ranking"][local_idx]  
@@ -179,18 +168,17 @@ class SCANDPreferenceDataset3(Dataset):
             # **Apply permutation to all action-related tensors**
             preference_ranking = preference_ranking[perm_]  
 
-        # Load image
             image = h5_file[group]["image"][local_idx]
             image = np.array(self.load_image(image))  # Load as NumPy
             data["images"].append(image) # Stack images
 
             # Store expanded data
-            data["goal_distance"].append(goal_distance)
-            data["heading_error"].append(heading_error)
+            # data["goal_distance"].append(goal_distance)
+            # data["heading_error"].append(heading_error)
             data["velocity"].append(velocity)
             data["rotation_rate"].append(omega)
             data["preference_ranking"].append(preference_ranking)
-            data["last_action"].append(last_action)
+            # data["last_action"].append(last_action)
             data["pref_idx"].append(pref_idx)
 
             # Convert lists to tensors
@@ -200,6 +188,5 @@ class SCANDPreferenceDataset3(Dataset):
                     data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.int64))
                 else:
                     data[key] = torch.from_numpy(np.array(data[key][0], dtype=np.float32))
-
                
             return data

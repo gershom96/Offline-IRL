@@ -87,8 +87,6 @@ class NuScenesPreferenceDataset(Dataset):
             data["velocity"].append(self.h5_file["velocity"][i])
             data["rotation_rate"].append(self.h5_file["rotation_rate"][i])
             data["preference_ranking"].append(self.h5_file["preference_ranking"][i])
-            data["last_action"].append(self.h5_file["last_action"][i])
-
             # Camera selection
             image_paths = self.h5_file["image_paths"][i]
 

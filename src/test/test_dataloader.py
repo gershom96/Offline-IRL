@@ -12,15 +12,15 @@ from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from data.nuscenes_pref_dataset import NuScenesPreferenceDataset
-from data.scand_pref_dataset import SCANDPreferenceDataset
+# from data.scand_pref_dataset import SCANDPreferenceDataset
 from data.scand_pref_dataset_2 import SCANDPreferenceDataset2
-from data.scand_pref_dataset_3 import SCANDPreferenceDataset3
+from data.scand_pref_dataset_3 import SCANDPreferenceDataset
 
 scand = True
 # Paths
 
 if(scand):
-    h5_file =  "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped.h5"
+    h5_file =  "/media/gershom/Media/Datasets/SCAND/scand_preference_data_grouped_expanded_test.h5"
 else:
     h5_file = "/media/gershom/Media/Datasets/NuScenes/H5/nuscenes_preference_data.h5"
     nuscenes_dataset_path = "/media/gershom/Media/Datasets/NuScenes"
@@ -36,7 +36,7 @@ else:
 
 
 if(scand):
-    dataset = SCANDPreferenceDataset3(h5_file)
+    dataset = SCANDPreferenceDataset(h5_file)
     sampler = WeightedRandomSampler(weights=dataset.sample_weights, num_samples=len(dataset), replacement=True)
     train_loader = DataLoader(dataset, batch_size=1, num_workers=8, pin_memory=True, sampler = sampler)
 
@@ -79,18 +79,21 @@ axs = None
 # Display Images and Metadata
 for sample in train_loader:
     
-
+    preference_ranking = sample["preference_ranking"][0]
+    preference_ranking = preference_ranking[sample["pref_idx"][0]]
     print(f"Sample : {1}/{n}")
-    print(sample["goal_distance"].shape)
-    print("Goal Distance:", sample["goal_distance"][0][0])
-    print("Heading Error:", sample["heading_error"][0][0])
-    print("Velocity:", sample["velocity"][0][0].numpy())
-    print("Rotation Rate:", sample["rotation_rate"][0][0].numpy())
+    # print(sample["goal_distance"].shape)
+    # print("Goal Distance:", sample["goal_distance"][0][0])
+    # print("Heading Error:", sample["heading_error"][0][0])
+    # print("Velocity:", sample["velocity"][0][0].numpy())
+    # print("Rotation Rate:", sample["rotation_rate"][0][0].numpy())
     print("Preference Ranking Shape:", sample["preference_ranking"].shape)
     print("Preference Indices Shape:", sample["pref_idx"].shape)
-    print("Preference Ranking Top3:", sample["preference_ranking"][0][0]*np.sqrt(0.63170535) + 0.91916239, sample["preference_ranking"][0][1], sample["preference_ranking"][0][2])
-    print("Last Action: ", sample["last_action"][0][0])
-    print("Last Action: ", sample["last_action"][0][1])
+
+    print(preference_ranking*0.2818386933609228 + 1.2765753737615684)
+    # print("Preference Ranking Top3:", preference_ranking*0.2818386933609228 + 1.2765753737615684, preference_ranking*0.2818386933609228 + 1.2765753737615684, preference_ranking*0.2818386933609228 + 1.2765753737615684)
+    # print("Last Action: ", sample["last_action"][0][0])
+    # print("Last Action: ", sample["last_action"][0][1])
 
     # ---- Display the Images ----
     images = sample["images"][0]  # Shape: [#Cameras, 3, H, W]

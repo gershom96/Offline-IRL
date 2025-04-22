@@ -7,7 +7,8 @@ import torchvision.transforms as transforms
 from io import BytesIO
 from PIL import Image
 
-from utils.reward_model_scand_3 import RewardModelSCAND3  # Ensure correct model class
+from utils.reward_model_scand_5 import RewardModelSCAND  # Ensure correct model class
+from scipy.stats import truncnorm
 
 def quaternion_to_yaw(q):
     """Converts quaternion to yaw angle."""
@@ -37,8 +38,7 @@ class SCANDRLProcessor:
 
         self.v_max = v_max
         self.w_max = w_max
-        self.d_v_max = d_v_max
-        self.d_w_max = d_w_max
+
         self.n_v = n_v
         self.n_w = n_w
         self.last_action = None  # Initialize this later for each scene
@@ -50,8 +50,12 @@ class SCANDRLProcessor:
         self.outlier_window = 40
         self.transform = False
 
-        self.v_res = 2 * self.d_v_max / (self.n_v - 1)
-        self.w_res = 2 * self.d_w_max / (self.n_w - 1)
+        self.v_res = 0.3
+        self.w_res = 0.24
+
+        self.d_v_max = (self.n_w - 1) * self.v_res / 2
+        self.d_w_max = (self.n_w - 1) * self.w_res / 2
+
         # Create consolidated HDF5 file if it doesn't exist
         if not os.path.exists(output_h5_path_expert):
             with h5py.File(output_h5_path_expert, "w") as f:
@@ -59,21 +63,20 @@ class SCANDRLProcessor:
                 
 
         self.means = {
-            "goal_distance": 25.00290765,
-            "heading_error": -0.01144954,
-            "velocity": 1.2836152,
-            "omega": -0.00149038,
+            "goal_distance": 9.886707493584415,
+            "heading_error": -0.00850201072417097,
+            "velocity": 1.2765753737615684,
+            "omega": -0.002504312331437613,
             "last_action": np.array([1.28372591, -0.00149611]),  # (2,)
-            "preference_ranking": np.array([1.2835427186288364, -0.00147476722583554])  # (2,)
+            "preference_ranking": np.array([ 1.2765752877383227, -0.0025043122945302026])
         }
 
         self.stds = {
-            "goal_distance": np.sqrt(275.01400778),
-            "heading_error": np.sqrt(0.31931658),
-            "velocity": np.sqrt(0.07844775),
-            "omega": np.sqrt(0.02225859),
-            "last_action": np.array([np.sqrt(0.07829221), np.sqrt(0.02225181)]),  # (2,)
-            "preference_ranking": np.array([np.sqrt(0.0785323071548214), np.sqrt(0.022286368831911443)])  # (2,)
+            "goal_distance": 6.374522710777637,
+            "heading_error": 0.44817681236970364,
+            "velocity": 0.2818386933609228,
+            "omega": 0.1492379970642606,
+            "preference_ranking": np.array([ 0.2818391436539243, 0.14923799976918717])
         }
 
     def standardize(self, data, key):
@@ -102,23 +105,14 @@ class SCANDRLProcessor:
             raise Exception
         return reward   
     
-    def create_action_space(self, last_action, expert_action, discretize = True):
+    def create_action_space(self, expert_action):
 
         # print(last_action)
-        last_v, last_w = last_action
         expert_v, expert_w = expert_action
 
-        
-        if(discretize):
-            # print(last_v)
-            last_v = round(last_v / self.v_res) * self.v_res
-            last_w = round(last_w / self.w_res) * self.w_res
-            expert_v = round(expert_v / self.v_res) * self.v_res
-            expert_w = round(expert_w / self.w_res) * self.w_res
-
         # Ensure velocities and omegas stay within bounds
-        v_actions = np.clip(np.linspace(last_v - self.d_v_max, last_v + self.d_v_max, self.n_v), 0, self.v_max)
-        w_actions = np.clip(np.linspace(last_w - self.d_w_max, last_w + self.d_w_max, self.n_w), -self.w_max, self.w_max)
+        v_actions = np.clip(np.linspace(expert_v - 2*self.v_res, expert_v + 2*self.v_res, self.n_v), 0, self.v_max)
+        w_actions = np.clip(np.linspace(expert_w - 2*self.w_res, expert_w + 2*self.w_res, self.n_w), -self.w_max, self.w_max)
 
         # Find expert indices
         expert_v_idx = np.argmin(np.abs(v_actions - expert_v))
@@ -137,11 +131,19 @@ class SCANDRLProcessor:
     
     def get_outliers(self, h5_filepath, scene):
 
-        range_dict = {
-            "v+w": [],
-            "v": [],
-            "w": []
+        group_list = {
+            "v>wr": [],
+            "v>wl": [],
+            "v<wr": [],
+            "v<wl":[],
+            "wr": [],
+            "wl": [],
+            "v>": [],
+            "v<": [],
+            "r" : [],
+            "l" : [],
         }
+
         with h5py.File(h5_filepath, "r") as h5file:
 
             velocities = h5file["v"][:]
@@ -153,59 +155,37 @@ class SCANDRLProcessor:
             w_idx = -1
 
             count_outliers = 0
-            for i in range(n_samples):
-                velocity_outlier = (velocities[i]>self.v_mean + 2*self.v_std) or (velocities[i]<self.v_mean - 2*self.v_std)
-                omega_outlier = (omegas[i]>self.w_mean+2*self.w_std) or (omegas[i]<self.w_mean-2*self.w_std)
-                
-                start_idx = max(i-40, 0)
-                end_idx = min(n_samples, i+40)
 
-                if(velocity_outlier and omega_outlier):
-                    if(v_w_idx == -1):
-                        range_dict["v+w"].append([start_idx, end_idx])
-                        v_w_idx+=1
-                    else:
-                        if(i <= range_dict["v+w"][v_w_idx][1]):
-                            range_dict["v+w"][v_w_idx][1] = end_idx
-                        elif(i-40 <= range_dict["v+w"][v_w_idx][1]):
-                            range_dict["v+w"][v_w_idx][1] = end_idx
-                        else:
-                            range_dict["v+w"].append([start_idx, end_idx])
-                            count_outliers += range_dict["v+w"][v_w_idx][1] - range_dict["v+w"][v_w_idx][0]
-                            v_w_idx+=1
+            fast_outlier = velocities>self.v_mean + 2*self.v_std 
+            slow_outlier = velocities<self.v_mean - 2*self.v_std
 
-                elif(velocity_outlier):
-                    if(v_idx == -1):
-                        range_dict["v"].append([start_idx, end_idx])
-                        v_idx+=1
-                    else:
-                        if(i <= range_dict["v"][v_idx][1]):
-                            range_dict["v"][v_idx][1] = end_idx
-                        elif(i-40 <= range_dict["v"][v_idx][1]):
-                            range_dict["v"][v_idx][1] = end_idx
-                        else:
-                            range_dict["v"].append([start_idx, end_idx])
-                            count_outliers += range_dict["v"][v_idx][1] - range_dict["v"][v_idx][0]
-                            v_idx+=1
+            right_outlier = omegas<self.w_mean-2*self.w_std
+            left_outlier = omegas>self.w_mean+2*self.w_std
 
-                elif(omega_outlier):
-                    if(w_idx == -1):
-                        range_dict["w"].append([start_idx, end_idx])
-                        w_idx+=1
-                    else:
-                        if(i <= range_dict["w"][w_idx][1]):
-                            range_dict["w"][w_idx][1] = end_idx
-                        elif(i-40 <= range_dict["w"][w_idx][1]):
-                            range_dict["w"][w_idx][1] = end_idx
-                        else:
-                            range_dict["w"].append([start_idx, end_idx])
-                            count_outliers += range_dict["w"][w_idx][1] - range_dict["w"][w_idx][0]
-                            w_idx+=1
+            right = omegas < 0
+
+            left = omegas >= 0
+
+            # raise Exception
+            # group_list["v>wr"] = np.logical_and(fast_outlier, right_outlier)
+            # group_list["v>wl"] = np.logical_and(fast_outlier, left_outlier)
+            group_list["v<wr"] = np.logical_and(slow_outlier, right_outlier)
+            group_list["v<wl"] = np.logical_and(slow_outlier, left_outlier)
+            group_list["v>"] = fast_outlier
+            group_list["v<"] = slow_outlier
+            group_list["wr"] = right_outlier
+            group_list["wl"] = left_outlier
+            group_list["r"] = right
+            group_list["l"] = left
+
+        for key in group_list.keys():
+            print(np.sum(group_list[key]))
+            count_outliers += np.sum(group_list[key])
 
         print(f"{scene} Outlier Count: {count_outliers}/{n_samples}")
-        return range_dict
+        return group_list
     
-    def process_file(self, h5_filepath, scene, outlier_dict):
+    def process_file(self, h5_filepath, scene, group_dict):
         with h5py.File(h5_filepath, "r") as h5file, h5py.File(self.output_h5_path_expert, "a") as output_h5_expert:
 
             positions = h5file["pos"][:]
@@ -216,28 +196,8 @@ class SCANDRLProcessor:
 
             self.last_action = np.array([h5file["v"][0][0], h5file["omega"][0][0]])
 
-            v_w_outlier_idx = 0
-            v_outlier_idx = 0
-            w_outlier_idx = 0
-
-            v_w_top, v_top, w_top = None, None, None
-            v_w_bottom, v_bottom, w_bottom = None, None, None
-
-            n_v_w_seg = len(outlier_dict["v+w"])
-            n_v_seg = len(outlier_dict["v"])
-            n_w_seg = len(outlier_dict["w"])
-
-            if(n_v_w_seg>0):
-                v_w_top = outlier_dict["v+w"][0][1]
-                v_w_bottom = outlier_dict["v+w"][0][0]
-            if(n_v_seg>0):
-                v_top = outlier_dict["v"][0][1]
-                v_bottom = outlier_dict["v"][0][0]
-            if(n_w_seg>0):
-                w_top = outlier_dict["w"][0][1]
-                w_bottom = outlier_dict["w"][0][0]
-
-            group_names = ["0", "1", "2", "3"]  # 0 : v+w outliers, 1 : v outliers, 2: w outliers, 3: normal
+            group_names = ["2", "3", "4", "5", "6", "7", "8", "9"] #  "v<wr", "v<wl", "wr", "wl", "v>", "v<", "r" , "l" 
+            
             
             for group in group_names:
                 # print(group, group in output_h5)
@@ -254,29 +214,42 @@ class SCANDRLProcessor:
                         for key, value in {"image_t":"image", "image_next":"image"}.items()
                     }
 
-            for i in range(n_samples - 2 ): # Avoid last two samples as the next state will not have any 
+            i = 0
+            self.end_of_scene = False
+            if(n_samples == 0 ):
+                raise Exception
+            
+            while not self.end_of_scene:
+                if (i == n_samples-1):
+                    self.end_of_scene = True
+                    continue
 
-                goal_distance, heading_error, goal_idx = self.calculate_goal_features(i, positions, orientations)
-                next_state_goal_d , next_state_heading_e = self.calculate_next_state_goal_features(i+1, goal_idx, positions, orientations)
+                if( i > self.goal_idx):
+
+                    if(i == 0):
+                        pass
+                    else:
+                        i = self.calculate_start_idx(i) 
+
+                    goal_idx = self.calculate_goal_idx(i, n_samples-1)
+                    self.goal_idx = goal_idx
+
+                goal_distance, heading_error = self.calculate_goal_features(i, self.goal_idx, positions, orientations)
+                next_state_goal_d , next_state_heading_e = self.calculate_next_state_goal_features(i+1, self.goal_idx, positions, orientations)
 
                 if(self.verbose):
-                    print(goal_idx, min(n_samples, i + self.v_max * 375), goal_distance, positions[i], positions[goal_idx])
-                # print(h5file["v"][i:i+2])
-                expert_action = (h5file["v"][i][0], h5file["omega"][i][0])
-                L_v, L_w, expert_v_idx, expert_w_idx = self.create_action_space(self.last_action, expert_action)
+                    print(self.goal_idx, goal_distance, positions[i], positions[goal_idx])
 
-                expert_action = np.array([L_v[expert_v_idx], L_w[expert_w_idx]])
+                expert_action =np.array([h5file["v"][i][0], h5file["omega"][i][0]])
+                L_v, L_w, expert_v_idx, expert_w_idx = self.create_action_space(expert_action)
 
 
                 if(self.verbose):
                     print(f"Sample: {i} Last_action: {self.last_action} Expert_action: {expert_action} Goal Index: {goal_idx}")
                     print(expert_action)
 
-                group, v_w_outlier_idx, v_outlier_idx, w_outlier_idx, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom = self.get_group(i, outlier_dict, v_w_top, v_w_bottom, 
-                                                                                                                                                v_top, v_bottom, w_top, w_bottom, 
-                                                                                                                                                n_v_w_seg, n_v_seg, n_w_seg,
-                                                                                                                                                v_w_outlier_idx, v_outlier_idx, w_outlier_idx)
-
+                group= self.get_group(i, group_dict)
+                
                 v_t = h5file["v"][i][0]
                 w_t = h5file["omega"][i][0]
 
@@ -298,62 +271,105 @@ class SCANDRLProcessor:
                 self.append_to_group_dataset(output_h5_expert[group], "image_t", image_t, (0,) + image_t.shape)
                 self.append_to_group_dataset(output_h5_expert[group], "goal_distance_t", goal_distance, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "heading_error_t", heading_error, (0, 1))
-                self.append_to_group_dataset(output_h5_expert[group], "v_t", v_t, (0, 1))
-                self.append_to_group_dataset(output_h5_expert[group], "w_t", w_t, (0, 1))
+                # self.append_to_group_dataset(output_h5_expert[group], "v_t", v_t, (0, 1))
+                # self.append_to_group_dataset(output_h5_expert[group], "w_t", w_t, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "action", expert_action, (0, 2))
-                self.append_to_group_dataset(output_h5_expert[group], "last_action", self.last_action, (0, 2))
-                self.append_to_group_dataset(output_h5_expert[group], "reward", reward, (0, 1))
+                # self.append_to_group_dataset(output_h5_expert[group], "last_action", self.last_action, (0, 2))
+                self.append_to_group_dataset(output_h5_expert[group], "reward", reward , (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "image_next", image_next, (0,) + image_next.shape)
                 self.append_to_group_dataset(output_h5_expert[group], "goal_distance_next", next_state_goal_d, (0, 1))
                 self.append_to_group_dataset(output_h5_expert[group], "heading_error_next", next_state_heading_e, (0, 1))
-                self.append_to_group_dataset(output_h5_expert[group], "v_t_next", v_next, (0, 1))
-                self.append_to_group_dataset(output_h5_expert[group], "w_t_next", w_next, (0, 1))
+                # self.append_to_group_dataset(output_h5_expert[group], "v_t_next", v_next, (0, 1))
+                # self.append_to_group_dataset(output_h5_expert[group], "w_t_next", w_next, (0, 1))
 
-                
 
                 self.last_action = np.array(expert_action)
+                i+=1
+                self.total_count+=1
+            self.goal_idx = -1
 
-            print(n_samples, output_h5_expert["0"]["image_t"].shape[0], output_h5_expert["1"]["image_t"].shape[0], output_h5_expert["2"]["image_t"].shape[0],output_h5_expert["3"]["image_t"].shape[0])                                                                  
-    
-    def get_group(self, i, outlier_dict, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom, n_v_w_seg, n_v_seg, n_w_seg, v_w_outlier_idx, v_outlier_idx, w_outlier_idx):
-        # print(i, outlier_dict, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom, n_v_w_seg, n_v_seg, n_w_seg, v_w_outlier_idx, v_outlier_idx, w_outlier_idx)
-        if(v_w_top):
-            if(i > v_w_top):
-                v_w_outlier_idx+=1
-                if(v_w_outlier_idx < n_v_w_seg):
-                    v_w_top, v_w_bottom = outlier_dict["v+w"][v_w_outlier_idx][1], outlier_dict["v+w"][v_w_outlier_idx][0]
-        if(v_top):
-            if(i > v_top):
-                v_outlier_idx+=1
-                if(v_outlier_idx < n_v_seg):
-                    v_top, v_bottom = outlier_dict["v"][v_outlier_idx][1], outlier_dict["v"][v_outlier_idx][0]
+    def project_traj(self, action, current_goal_distance, current_heading_error, N = 5):
 
-        if(w_top):
-            if(i > w_top):
-                w_outlier_idx+=1
-                if(w_outlier_idx < n_w_seg):
-                    
-                    w_top, w_bottom = outlier_dict["w"][w_outlier_idx][1], outlier_dict["w"][w_outlier_idx][0]
-                    # print(i, w_outlier_idx, w_bottom, w_top)
-        group_dict = {
-            "v+w": "0",
-            "v": "1",
-            "w": "2",
+        dT = self.dt/N
+        x,y, theta = 0, 0, 0
+
+        x_goal = current_goal_distance*np.cos(current_heading_error)
+        y_goal = current_goal_distance*np.sin(current_heading_error)
+
+        for i in range(N):
+            x += action[0] * np.cos(theta) * dT
+            y += action[0] * np.sin(theta) * dT
+            theta += action[1] * dT
+
+        distance = np.linalg.norm([x - x_goal, y - y_goal])
+        theta_goal = np.arctan2(y_goal - y, x_goal - x)
+
+        theta_err = theta_goal - theta
+
+        theta_err = normalize_angle(theta_err)
+
+        return distance, theta_err
+
+    def calc_rewards_non_social(self, curr_distance_to_goal, next_distance_to_goal, next_heading_error, next_action):
+
+        r_goal = (curr_distance_to_goal - next_distance_to_goal)/(self.means["velocity"]*self.dt) 
+        r_heading = np.cos(next_heading_error)
+        r_dynamic = -np.sum(np.abs(next_action - self.last_action))
+
+        if(next_distance_to_goal<0.1):
+            r_goal +=10
+
+        return r_goal + r_heading +  r_dynamic
+                                                                                 
+    def get_group(self, i, group_dict):
+        group_keys = {
+            # "v>wr": "0",
+            # "v>wl": "1",
+            "v<wr": "2",
+            "v<wl": "3",
+            "wr": "4",
+            "wl": "5",
+            "v>": "6",
+            "v<": "7",
+            "r": "8",
+            "l": "9"
         }
-
-        if(v_w_bottom):
-            if (i > v_w_bottom and i <= v_w_top):
-                return group_dict["v+w"], v_w_outlier_idx, v_outlier_idx, w_outlier_idx, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom
-        if(v_bottom):
-            if (i > v_bottom and i <= v_top):
-                return group_dict["v"], v_w_outlier_idx, v_outlier_idx, w_outlier_idx, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom
-        if(w_bottom):  
-            # print(i, w_bottom, w_top)
-            if( i > w_bottom and i <= w_top):
-                # print(i)
-                return group_dict["w"], v_w_outlier_idx, v_outlier_idx, w_outlier_idx, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom
         
-        return "3", v_w_outlier_idx, v_outlier_idx, w_outlier_idx, v_w_top, v_w_bottom, v_top, v_bottom, w_top, w_bottom
+        # if(group_dict["v>wr"][i]):
+        #     return group_keys["v>wr"]
+        
+        # elif(group_dict["v>wl"][i]):
+        #     return group_keys["v>wl"]
+        
+        # el
+        
+        if(group_dict["v<wr"][i]):
+            return group_keys["v<wr"]
+        
+        elif(group_dict["v<wl"][i]):
+            return group_keys["v<wl"]
+        
+        elif(group_dict["wr"][i]):
+            return group_keys["wr"]
+        
+        elif(group_dict["wl"][i]):
+            return group_keys["wl"]
+        
+        elif(group_dict["v>"][i]):
+            return group_keys["v>"]
+        
+        elif(group_dict["v<"][i]):
+            return group_keys["v<"]
+        
+        elif(group_dict["r"][i]):
+            return group_keys["r"]
+        
+        elif(group_dict["l"][i]):
+            return group_keys["l"]
+        
+        else:
+            print("Error this should not have happened")
+            return "10"
 
     def calculate_preferences(self, L_v, L_w, preferences, expert_v_idx, expert_w_idx):
 
@@ -422,15 +438,35 @@ class SCANDRLProcessor:
 
                 yield [v_1, w_1, v_2, w_2, preference_value, pref_label]
 
-    def calculate_goal_features(self, current_idx, positions, orientations):
+    def calculate_start_idx(self, i):
+
+        start_idx = max(0, np.random.randint(i - self.v_mean*40, i))
+
+        return start_idx
+    
+    def calculate_goal_idx(self, current_idx, n_samples):
         """Calculate distance to goal and heading error."""
-        if current_idx >= len(positions) - 1:
-            return 0, 0  # Edge case for the last sample
+        # if current_idx >= len(positions) - 1:
+        #     return 0, 0, None  # Edge case for the last sample
+
+        mean = min(current_idx + self.v_mean * 210, n_samples)
+        sigma = self.v_mean * 62.5
+
+        # print("goal_stats", mean, sigma)
+        lower_bound = max(mean - sigma, current_idx)
+        upper_bound = min(mean + sigma, n_samples)
+
+        # Truncated Normal Sampling
+        a, b = (lower_bound - mean) / sigma, (upper_bound - mean) / sigma
+        goal_idx = int(np.round(truncnorm.rvs(a, b, loc=mean, scale=sigma)))
         
-        # goal_idx = np.random.randint(i + 1, min(n_samples, i + self.v_max * 375)) #250 is 25 Hz times 15 seoncds
+        if(upper_bound- current_idx < 252):
+        
+            return n_samples
 
-        goal_idx = np.random.randint(current_idx + 1, min(len(positions), current_idx + self.v_max * 375))
-
+        return goal_idx
+    
+    def calculate_goal_features(self, current_idx, goal_idx, positions, orientations):
         current_pos = positions[current_idx][:2]
         goal_pos = positions[goal_idx][:2]
 
@@ -440,7 +476,7 @@ class SCANDRLProcessor:
         current_yaw = orientations[current_idx]
         heading_error = normalize_angle(desired_heading - current_yaw)
 
-        return distance, heading_error, goal_idx
+        return distance, heading_error
     
     def calculate_next_state_goal_features(self, next_idx, goal_idx, positions, orientations):
         """Calculate distance to goal and heading error."""
@@ -484,24 +520,26 @@ class SCANDRLProcessor:
 
 # Example Usage
 h5_dir = "/media/gershom/Media/Datasets/SCAND/Comparisons/H5/"
-output_h5_path_expert = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_expert_her_test.h5"
+output_h5_path_expert = "/media/gershom/Media/Datasets/SCAND/scand_rl_data_grouped_expert_her_train.h5"
 
 scand_stats_path = "/home/gershom/Documents/GAMMA/IROS25/Repos/Offline-IRL/src/data_stats.json"
 
 completed = [
-    # 'A_Spot_Security_NHB_Wed_Nov_10_54_w_laserscan.h5', 'C_Spot_Tent_AHG_Fri_Nov_26_130_w_laserscan.h5', 'B_Spot_AHG_Library_Mon_Nov_15_107_w_laserscan.h5', 
-    # 'A_Spot_Ahg_Library_Wed_Nov_10_56_w_laserscan.h5', 'C_Spot_Rec_Tent_Fri_Nov_26_129_w_laserscan.h5', 'A_Spot_NHB_Ahg_Wed_Nov_10_55_w_laserscan.h5', 
+    'A_Spot_Security_NHB_Wed_Nov_10_54_w_laserscan.h5', 'C_Spot_Tent_AHG_Fri_Nov_26_130_w_laserscan.h5', 'B_Spot_AHG_Library_Mon_Nov_15_107_w_laserscan.h5', 
+    'A_Spot_Ahg_Library_Wed_Nov_10_56_w_laserscan.h5', 'C_Spot_Rec_Tent_Fri_Nov_26_129_w_laserscan.h5', 'A_Spot_NHB_Ahg_Wed_Nov_10_55_w_laserscan.h5', 
     # 'D_Spot_PerformingArts_Lbj_Sat_Nov_13_98_w_laserscan.h5', 'A_Spot_Ahg_EERC_Thu_Nov_11_79_w_laserscan.h5', 'A_Spot_AHG_AHG_Mon_Nov_8_27_w_laserscan.h5', 
-    'A_Spot_Union_Union_Wed_Nov_10_53_w_laserscan.h5', 'A_Spot_Union_Union_Wed_Nov_10_67_w_laserscan.h5', 'A_Spot_SAC_GeorgeWashStatue_Wed_Nov_10_50_w_laserscan.h5', 
-    'C_Spot_Speedway_Butler_Fri_Nov_26_131_w_laserscan.h5', 'A_Spot_Ballstructure_UTTower_Wed_Nov_10_60_w_laserscan.h5', 'A_Spot_Library_Fountain_Mon_Nov_8_30_w_laserscan.h5', 
-    'C_Spot_SanJac_Bass_Fri_Nov_26_125_w_laserscan.h5', 'A_Spot_Library_Fountain_Tue_Nov_9_35_w_laserscan.h5', 'A_Spot_AHG_Library_Fri_Nov_12_81_w_laserscan.h5', 
-    'A_Spot_Parlin_Parlin_Wed_Nov_10_51_w_laserscan.h5', 'B_Spot_AHG_Union_Mon_Nov_15_111_w_laserscan.h5', 'A_Spot_Library_MLK_Thu_Nov_18_123_w_laserscan.h5', 
-    'A_Jackal_Speedway_Speedway_Fri_Oct_29_12_w_laserscan.h5', 'A_Spot_AHG_Library_Mon_Nov_8_24_w_laserscan.h5', 'A_Spot_NHB_Jester_Wed_Nov_10_62_w_laserscan.h5', 
-    'A_Spot_Library_MLK_Thu_Nov_18_122_w_laserscan.h5', 'A_Spot_Stadium_PerformingArtsCenter_Sat_Nov_13_106_w_laserscan.h5', 'A_Spot_Union_Library_Tue_Nov_9_37_w_laserscan.h5', 
-    'A_Spot_AHG_Library_Fri_Nov_5_21_w_laserscan.h5', 'A_Spot_AHG_Cola_Sat_Nov_13_96_w_laserscan.h5', 'A_Spot_Fountain_Dobie_Fri_Nov_12_83_w_laserscan.h5', 
-    'A_Spot_Welch_Union_Thu_Nov_11_71_w_laserscan.h5', 'A_Spot_Bass_Rec_Fri_Nov_26_126_w_laserscan.h5', 'A_Spot_AHG_Library_Wed_Nov_10_46_w_laserscan.h5', 
-    'A_Spot_AHG_GDC_Tue_Nov_9_41_w_laserscan.h5', 'B_Spot_AHG_Library_Tue_Nov_9_34_w_laserscan.h5', 'A_Spot_UTTower_Union_Wed_Nov_10_61_w_laserscan.h5', 
-    'A_Spot_Thompson_Butler_Sat_Nov_13_103_w_laserscan.h5']
+    # 'A_Spot_Union_Union_Wed_Nov_10_53_w_laserscan.h5', 'A_Spot_Union_Union_Wed_Nov_10_67_w_laserscan.h5', 'A_Spot_SAC_GeorgeWashStatue_Wed_Nov_10_50_w_laserscan.h5', 
+    # 'C_Spot_Speedway_Butler_Fri_Nov_26_131_w_laserscan.h5', 'A_Spot_Ballstructure_UTTower_Wed_Nov_10_60_w_laserscan.h5', 'A_Spot_Library_Fountain_Mon_Nov_8_30_w_laserscan.h5', 
+    # 'C_Spot_SanJac_Bass_Fri_Nov_26_125_w_laserscan.h5', 'A_Spot_Library_Fountain_Tue_Nov_9_35_w_laserscan.h5', 'A_Spot_AHG_Library_Fri_Nov_12_81_w_laserscan.h5', 
+    # 'A_Spot_Parlin_Parlin_Wed_Nov_10_51_w_laserscan.h5', 'B_Spot_AHG_Union_Mon_Nov_15_111_w_laserscan.h5', 'A_Spot_Library_MLK_Thu_Nov_18_123_w_laserscan.h5', 
+    # 'A_Jackal_Speedway_Speedway_Fri_Oct_29_12_w_laserscan.h5', 'A_Spot_AHG_Library_Mon_Nov_8_24_w_laserscan.h5', 'A_Spot_NHB_Jester_Wed_Nov_10_62_w_laserscan.h5', 
+    # 'A_Spot_Library_MLK_Thu_Nov_18_122_w_laserscan.h5', 'A_Spot_Stadium_PerformingArtsCenter_Sat_Nov_13_106_w_laserscan.h5', 'A_Spot_Union_Library_Tue_Nov_9_37_w_laserscan.h5', 
+    # 'A_Spot_AHG_Library_Fri_Nov_5_21_w_laserscan.h5', 'A_Spot_AHG_Cola_Sat_Nov_13_96_w_laserscan.h5', 'A_Spot_Fountain_Dobie_Fri_Nov_12_83_w_laserscan.h5', 
+    # 'A_Spot_Welch_Union_Thu_Nov_11_71_w_laserscan.h5', 'A_Spot_Bass_Rec_Fri_Nov_26_126_w_laserscan.h5', 'A_Spot_AHG_Library_Wed_Nov_10_46_w_laserscan.h5', 
+    # 'A_Spot_AHG_GDC_Tue_Nov_9_41_w_laserscan.h5', 'B_Spot_AHG_Library_Tue_Nov_9_34_w_laserscan.h5', 'A_Spot_UTTower_Union_Wed_Nov_10_61_w_laserscan.h5', 
+    # 'A_Spot_Thompson_Butler_Sat_Nov_13_103_w_laserscan.h5'
+    
+    ]
 
 
 processor = SCANDRLProcessor(output_h5_path_expert, scand_stats_path = scand_stats_path)
